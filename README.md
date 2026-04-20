@@ -28,6 +28,12 @@ Detailed performance and B4-specific analysis are documented separately in:
 
 - [B4_Performance_Report.md](B4_Performance_Report.md)
 
+## GitHub Pages Setup
+
+For step-by-step GitHub Pages setup (project site and username.github.io site), see:
+
+- [GITHUB_PAGES_DOCUMENT.md](GITHUB_PAGES_DOCUMENT.md)
+
 ## Repository Structure
 
 - `app.py`: Flask application entry point
