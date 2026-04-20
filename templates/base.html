@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}ICH Screening Dashboard{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="{{ url_for('static', filename='styles.css') }}"
+    />
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    <!-- ── Top navigation ─────────────────────────────────────────────── -->
+    <header class="topbar">
+      <div class="topbar-inner">
+        <a class="brand" href="{{ url_for('home') }}">
+          <span class="brand-icon">
+            <svg
+              width="22"
+              height="22"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+            </svg>
+          </span>
+          <span>ICH Screening</span>
+        </a>
+
+        <nav class="nav-links">
+          <a href="{{ url_for('home') }}"
+             class="{% if request.endpoint == 'home' %}active{% endif %}">Home</a>
+          <a href="{{ url_for('upload') }}"
+             class="{% if request.endpoint == 'upload' %}active{% endif %}">New Scan</a>
+          <a href="{{ url_for('reports') }}"
+             class="{% if request.endpoint == 'reports' %}active{% endif %}">Past Reports</a>
+          <a href="{{ url_for('logs_page') }}"
+             class="{% if request.endpoint == 'logs_page' %}active{% endif %}">Logs</a>
+          <a href="{{ url_for('evaluation') }}"
+             class="{% if request.endpoint == 'evaluation' %}active{% endif %}">Evaluation</a>
+          <a href="{{ url_for('about') }}"
+             class="{% if request.endpoint == 'about' %}active{% endif %}">About</a>
+        </nav>
+      </div>
+    </header>
+
+    <!-- ── Main content ────────────────────────────────────────────────── -->
+    <main class="container page">{% block content %}{% endblock %}</main>
+
+    <!-- ── Footer ──────────────────────────────────────────────────────── -->
+    <footer class="footer">
+      <div class="container footer-inner">
+        <p>
+          AI-Assisted CT-Based Intracranial Hemorrhage Detection &mdash;
+          Screening Tool, Not a Diagnostic Device
+        </p>
+        <p class="muted small">
+          All findings must be reviewed by a qualified medical professional.
+        </p>
+      </div>
+    </footer>
+
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}ICH Screening — Execution Logs{% endblock %}
+
+{% block content %}
+<section class="page-header">
+  <h1>Execution Logs</h1>
+  <p class="muted">
+    Inference execution traces recorded by <code>blackbox-recorder</code>.
+    Each upload generates a human-readable <strong>.txt</strong> report and
+    a machine-parseable <strong>.json</strong> trace.
+  </p>
+</section>
+
+{% if logs %}
+<div class="log-summary">
+  <span class="badge">{{ logs | length }} trace{{ 's' if logs | length != 1 }}</span>
+</div>
+
+<table class="data-table logs-table">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Timestamp</th>
+      <th>Image ID</th>
+      <th>Size (KB)</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for entry in logs %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ entry.timestamp }}</td>
+      <td><code>{{ entry.image_id }}</code></td>
+      <td>{{ entry.size_kb }}</td>
+      <td class="log-actions">
+        {% if entry.txt_file %}
+        <a href="{{ url_for('serve_log', filename=entry.txt_file) }}"
+           target="_blank" class="btn btn-sm" title="View text report">
+          TXT
+        </a>
+        {% endif %}
+        {% if entry.json_file %}
+        <a href="{{ url_for('serve_log', filename=entry.json_file) }}"
+           target="_blank" class="btn btn-sm btn-outline" title="View JSON trace">
+          JSON
+        </a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% else %}
+<div class="empty-state">
+  <svg width="64" height="64" viewBox="0 0 24 24" fill="none"
+       stroke="var(--muted)" stroke-width="1.2">
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+  </svg>
+  <h3>No execution logs yet</h3>
+  <p class="muted">
+    Upload and screen a DICOM file to generate the first inference trace.
+  </p>
+  <a href="{{ url_for('upload') }}" class="btn">Upload a Scan</a>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+
+{% block title %}Evaluation — ICH Screening{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-text">
+    <h1>Model Evaluation</h1>
+    <p>
+      Calibration metrics, confidence band analysis, and probability
+      distribution from the inference pipeline.
+    </p>
+  </div>
+</section>
+
+<!-- Calibration metrics -->
+{% if calib %}
+<section class="eval-grid">
+  <article class="panel">
+    <h3>Calibration Parameters</h3>
+    <div class="kv-group">
+      <div class="kv">
+        <span>Method</span><strong>{{ calib.get('method', 'N/A') }}</strong>
+      </div>
+      <div class="kv">
+        <span>Temperature</span
+        ><strong>{{ '%.4f'|format(calib.temperature) }}</strong>
+      </div>
+      <div class="kv">
+        <span>Decision Threshold</span
+        ><strong>{{ '%.4f'|format(calib.calibrated_threshold) }}</strong>
+      </div>
+      <div class="kv">
+        <span>Base Threshold</span
+        ><strong>{{ '%.4f'|format(calib.base_threshold) }}</strong>
+      </div>
+      <div class="kv">
+        <span>High Band ≥</span><strong>{{ calib.high_threshold }}</strong>
+      </div>
+      <div class="kv">
+        <span>Low Band &lt;</span><strong>{{ calib.low_threshold }}</strong>
+      </div>
+    </div>
+  </article>
+
+  <article class="panel">
+    <h3>Calibration Quality</h3>
+    <div class="metric-grid">
+      <div class="metric-card">
+        <div class="metric-label">ECE (Raw)</div>
+        <div class="metric-value">{{ '%.4f'|format(calib.raw_ece) }}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">ECE (Calibrated)</div>
+        <div class="metric-value">{{ '%.4f'|format(calib.cal_ece) }}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Brier (Raw)</div>
+        <div class="metric-value">{{ '%.4f'|format(calib.raw_brier) }}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Brier (Cal)</div>
+        <div class="metric-value">{{ '%.4f'|format(calib.cal_brier) }}</div>
+      </div>
+    </div>
+    <p class="muted small" style="margin-top: 12px">
+      Temperature scaling adjusts logits by T={{
+      '%.4f'|format(calib.temperature) }} to produce better-calibrated
+      probabilities. Lower ECE = better calibration.
+    </p>
+  </article>
+</section>
+{% endif %}
+
+<!-- Normalization -->
+{% if norm %}
+<section class="panel" style="margin-top: 16px">
+  <h3>Normalization Statistics</h3>
+  <div class="kv-group" style="max-width: 500px">
+    <div class="kv">
+      <span>Mean (per channel)</span><strong>{{ norm.mean }}</strong>
+    </div>
+    <div class="kv">
+      <span>Std (per channel)</span><strong>{{ norm.std }}</strong>
+    </div>
+    <div class="kv">
+      <span>Computed from</span
+      ><strong>{{ norm.get('n_images', 'N/A') }} images</strong>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<!-- Confidence Band Breakdown -->
+<section class="panel" style="margin-top: 16px">
+  <h3>Confidence Band Analysis</h3>
+  <p class="muted small">
+    Distribution of {{ total }} processed cases across the three confidence
+    bands.
+  </p>
+
+  <div class="band-grid">
+    {% for bnd in ['HIGH', 'MEDIUM', 'LOW'] %} {% set d = band_data.get(bnd,
+    {'total': 0, 'positive': 0, 'negative': 0}) %}
+    <div class="band-card band-{{ bnd|lower }}">
+      <div class="band-header">
+        <span class="badge badge-{{ bnd|lower }}">{{ bnd }}</span>
+        <span class="band-total">{{ d.total }} cases</span>
+      </div>
+      <div class="band-bars">
+        <div class="band-bar-row">
+          <span class="band-bar-label">Positive</span>
+          <div class="band-bar">
+            <div
+              class="band-bar-fill fill-red"
+              style="width: {{ (d.positive / d.total * 100) if d.total else 0 }}%"
+            ></div>
+          </div>
+          <span class="band-bar-val">{{ d.positive }}</span>
+        </div>
+        <div class="band-bar-row">
+          <span class="band-bar-label">Negative</span>
+          <div class="band-bar">
+            <div
+              class="band-bar-fill fill-green"
+              style="width: {{ (d.negative / d.total * 100) if d.total else 0 }}%"
+            ></div>
+          </div>
+          <span class="band-bar-val">{{ d.negative }}</span>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- Probability Distribution -->
+<section class="panel" style="margin-top: 16px">
+  <h3>Calibrated Probability Distribution</h3>
+  <p class="muted small">
+    Histogram of calibrated probabilities across all cases (10 bins).
+  </p>
+
+  <div class="histogram">
+    {% set max_bin = bins|max if bins|max > 0 else 1 %} {% for count in bins %}
+    <div class="hist-col">
+      <div
+        class="hist-bar"
+        style="height: {{ (count / max_bin * 180)|round }}px"
+        title="{{ '%.1f'|format(loop.index0 * 0.1) }}–{{ '%.1f'|format(loop.index0 * 0.1 + 0.1) }}: {{ count }}"
+      >
+        <span class="hist-count">{{ count }}</span>
+      </div>
+      <div class="hist-label">{{ '%.1f'|format(loop.index0 * 0.1) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
+<!-- Summary stats -->
+<section class="panel" style="margin-top: 16px">
+  <h3>Summary Statistics</h3>
+  <div class="kv-group" style="max-width: 500px">
+    <div class="kv">
+      <span>Total processed</span><strong>{{ stats.total }}</strong>
+    </div>
+    <div class="kv">
+      <span>Positive (flagged)</span><strong>{{ stats.positive }}</strong>
+    </div>
+    <div class="kv">
+      <span>Negative</span><strong>{{ stats.negative }}</strong>
+    </div>
+    <div class="kv">
+      <span>Urgent escalations</span><strong>{{ stats.urgent }}</strong>
+    </div>
+    <div class="kv">
+      <span>Average calibrated prob</span
+      ><strong>{{ '%.4f'|format(stats.avg_cal_prob) }}</strong>
+    </div>
+    <div class="kv">
+      <span>Heatmaps generated</span><strong>{{ stats.heatmaps }}</strong>
+    </div>
+  </div>
+</section>
+{% endblock %}

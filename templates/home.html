@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}ICH Screening — Home{% endblock %}
+
+{% block content %}
+<section class="home-hero">
+  <h1>ICH Screening System</h1>
+  <p>
+    AI-Assisted CT-Based Intracranial Hemorrhage Detection with
+    Explainability and Clinical Reporting
+  </p>
+</section>
+
+<!-- Quick stats row -->
+{% if stats.total > 0 %}
+<section class="stats-row home-stats">
+  <div class="stat-card">
+    <div class="stat-label">Total Scans</div>
+    <div class="stat-value">{{ stats.total }}</div>
+  </div>
+  <div class="stat-card accent-red">
+    <div class="stat-label">Positive</div>
+    <div class="stat-value">{{ stats.positive }}</div>
+  </div>
+  <div class="stat-card accent-green">
+    <div class="stat-label">Negative</div>
+    <div class="stat-value">{{ stats.negative }}</div>
+  </div>
+  <div class="stat-card accent-orange">
+    <div class="stat-label">Urgent</div>
+    <div class="stat-value">{{ stats.urgent }}</div>
+  </div>
+  <div class="stat-card accent-blue">
+    <div class="stat-label">Positivity Rate</div>
+    <div class="stat-value">{{ '%.1f'|format(stats.pos_rate) }}%</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Avg Cal. Prob</div>
+    <div class="stat-value">{{ '%.3f'|format(stats.avg_cal_prob) }}</div>
+  </div>
+</section>
+{% endif %}
+
+<!-- Main action cards -->
+<section class="home-cards">
+  <a href="{{ url_for('upload') }}" class="home-card">
+    <div class="home-card-icon">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="17 8 12 3 7 8" />
+        <line x1="12" y1="3" x2="12" y2="15" />
+      </svg>
+    </div>
+    <h2>Upload Scans</h2>
+    <p>
+      Upload single or batch DICOM scans (.dcm / .zip) for AI-powered
+      hemorrhage screening with Grad-CAM visualization.
+    </p>
+    <span class="home-card-action">Upload files &rarr;</span>
+  </a>
+
+  <a href="{{ url_for('reports') }}" class="home-card">
+    <div class="home-card-icon">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+        <line x1="16" y1="13" x2="8" y2="13" />
+        <line x1="16" y1="17" x2="8" y2="17" />
+      </svg>
+    </div>
+    <h2>Past Reports</h2>
+    <p>
+      Browse {{ stats.total }} screening reports with confidence bands,
+      triage actions, and Grad-CAM heatmaps.
+    </p>
+    <span class="home-card-action">View reports &rarr;</span>
+  </a>
+</section>
+
+<!-- Secondary cards -->
+<section class="home-cards home-cards-secondary">
+  <a href="{{ url_for('logs_page') }}" class="home-card home-card-sm">
+    <div class="home-card-icon">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+      </svg>
+    </div>
+    <h3>Execution Logs</h3>
+    <p class="muted small">{{ log_count }} inference trace{{ 's' if log_count != 1 }} recorded</p>
+  </a>
+
+  <a href="{{ url_for('evaluation') }}" class="home-card home-card-sm">
+    <div class="home-card-icon">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5">
+        <line x1="18" y1="20" x2="18" y2="10" />
+        <line x1="12" y1="20" x2="12" y2="4" />
+        <line x1="6" y1="20" x2="6" y2="14" />
+      </svg>
+    </div>
+    <h3>Model Evaluation</h3>
+    <p class="muted small">Calibration metrics and band analysis</p>
+  </a>
+
+  <a href="{{ url_for('about') }}" class="home-card home-card-sm">
+    <div class="home-card-icon">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="12" y1="16" x2="12" y2="12" />
+        <line x1="12" y1="8" x2="12.01" y2="8" />
+      </svg>
+    </div>
+    <h3>About</h3>
+    <p class="muted small">System architecture and methodology</p>
+  </a>
+</section>
+
+<section class="disclaimer-box" style="margin-top: 32px">
+  <strong>Disclaimer:</strong>
+  This is an AI-assisted screening tool and does NOT constitute a medical
+  diagnosis. All findings must be reviewed by a qualified medical professional.
+</section>
+{% endblock %}

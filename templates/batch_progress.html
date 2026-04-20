@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+
+{% block title %}Batch Processing — ICH Screening{% endblock %}
+
+{% block content %}
+<section class="breadcrumb">
+  <a href="{{ url_for('home') }}">Home</a>
+  <span class="sep">/</span>
+  <a href="{{ url_for('upload') }}">Upload</a>
+  <span class="sep">/</span>
+  <span>Batch {{ batch_id }}</span>
+</section>
+
+<section class="batch-header">
+  <h1 id="batchTitle">Processing Batch&hellip;</h1>
+  <p class="muted" id="batchSubtitle">
+    Analyzing {{ batch.total }} DICOM file{{ 's' if batch.total != 1 }} — please keep this page open.
+  </p>
+</section>
+
+<!-- ── Progress bar ────────────────────────────────────────────────── -->
+<section class="panel batch-panel">
+  <div class="batch-stats-row">
+    <div class="batch-stat">
+      <span class="batch-stat-label">Total</span>
+      <span class="batch-stat-value" id="statTotal">{{ batch.total }}</span>
+    </div>
+    <div class="batch-stat">
+      <span class="batch-stat-label">Processed</span>
+      <span class="batch-stat-value" id="statProcessed">0</span>
+    </div>
+    <div class="batch-stat accent-green">
+      <span class="batch-stat-label">Succeeded</span>
+      <span class="batch-stat-value" id="statSucceeded">0</span>
+    </div>
+    <div class="batch-stat accent-red">
+      <span class="batch-stat-label">Failed</span>
+      <span class="batch-stat-value" id="statFailed">0</span>
+    </div>
+  </div>
+
+  <div class="progress-track">
+    <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+  </div>
+  <div class="progress-text">
+    <span id="progressPct">0%</span>
+    <span id="currentFile" class="muted"></span>
+  </div>
+</section>
+
+<!-- ── Live feed of recent results ─────────────────────────────────── -->
+<section class="panel" id="feedPanel" style="display: none">
+  <h3>Recent Results</h3>
+  <ul class="batch-feed" id="batchFeed"></ul>
+</section>
+
+<!-- ── Completion summary (shown when done) ────────────────────────── -->
+<section class="panel batch-done-panel" id="donePanel" style="display: none">
+  <div class="batch-done-icon">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+         stroke="var(--green)" stroke-width="2">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
+    </svg>
+  </div>
+  <h2>Batch Complete</h2>
+  <p class="muted" id="doneSummary"></p>
+  <div class="batch-done-actions">
+    <a href="{{ url_for('reports') }}" class="btn btn-primary">View Reports</a>
+    <a href="{{ url_for('upload') }}" class="btn">Upload More</a>
+  </div>
+</section>
+
+<!-- ── Failed files (shown only if failures) ───────────────────────── -->
+<section class="panel" id="failPanel" style="display: none">
+  <h3 class="text-red">Failed Files</h3>
+  <ul class="batch-fail-list" id="failList"></ul>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var BATCH_ID    = "{{ batch_id }}";
+  var POLL_MS     = 1000;
+  var statusUrl   = "/batch/status/" + BATCH_ID;
+  var reportsUrl  = "{{ url_for('reports') }}";
+
+  var title        = document.getElementById("batchTitle");
+  var subtitle     = document.getElementById("batchSubtitle");
+  var fill         = document.getElementById("progressFill");
+  var pctLabel     = document.getElementById("progressPct");
+  var currentFile  = document.getElementById("currentFile");
+  var statTotal    = document.getElementById("statTotal");
+  var statProc     = document.getElementById("statProcessed");
+  var statOK       = document.getElementById("statSucceeded");
+  var statFail     = document.getElementById("statFailed");
+  var feedPanel    = document.getElementById("feedPanel");
+  var feedList     = document.getElementById("batchFeed");
+  var donePanel    = document.getElementById("donePanel");
+  var doneSummary  = document.getElementById("doneSummary");
+  var failPanel    = document.getElementById("failPanel");
+  var failList     = document.getElementById("failList");
+
+  var prevIds = [];   // track already-shown image_ids
+
+  function poll() {
+    fetch(statusUrl)
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var pct = d.total > 0 ? Math.round(d.processed / d.total * 100) : 0;
+
+        /* Update numbers */
+        statTotal.textContent = d.total;
+        statProc.textContent  = d.processed;
+        statOK.textContent    = d.succeeded;
+        statFail.textContent  = d.failed_count;
+
+        /* Progress bar */
+        fill.style.width = pct + "%";
+        pctLabel.textContent = pct + "%";
+
+        /* Current file label */
+        if (d.current_file) {
+          currentFile.textContent = "Processing: " + d.current_file;
+        } else {
+          currentFile.textContent = "";
+        }
+
+        /* Live feed of recently processed IDs */
+        if (d.image_ids && d.image_ids.length) {
+          feedPanel.style.display = "block";
+          d.image_ids.forEach(function (iid) {
+            if (prevIds.indexOf(iid) === -1) {
+              prevIds.push(iid);
+              var li = document.createElement("li");
+              var a  = document.createElement("a");
+              a.href = "/case/" + iid;
+              a.textContent = iid;
+              li.appendChild(a);
+              feedList.insertBefore(li, feedList.firstChild);
+              /* Keep max 20 items visible */
+              while (feedList.children.length > 20) {
+                feedList.removeChild(feedList.lastChild);
+              }
+            }
+          });
+        }
+
+        /* Done? */
+        if (d.status === "completed" || d.status === "failed") {
+          title.textContent = "Batch Complete";
+          subtitle.textContent = "";
+          donePanel.style.display = "block";
+          doneSummary.textContent =
+            d.succeeded + " of " + d.total + " files processed successfully" +
+            (d.failed_count > 0 ? ", " + d.failed_count + " failed" : "") + ".";
+
+          /* Show failed files */
+          if (d.failed_ids && d.failed_ids.length) {
+            failPanel.style.display = "block";
+            d.failed_ids.forEach(function (fid) {
+              var li = document.createElement("li");
+              li.textContent = fid;
+              failList.appendChild(li);
+            });
+          }
+          return; /* stop polling */
+        }
+
+        /* Keep polling */
+        setTimeout(poll, POLL_MS);
+      })
+      .catch(function () {
+        /* Network error — retry after a longer delay */
+        setTimeout(poll, POLL_MS * 3);
+      });
+  }
+
+  /* Start polling immediately */
+  poll();
+})();
+</script>
+{% endblock %}

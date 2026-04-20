@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block title %}Past Reports — ICH Screening{% endblock %}
+
+{% block content %}
+<section class="breadcrumb">
+  <a href="{{ url_for('home') }}">Home</a>
+  <span class="sep">/</span>
+  <span>Past Reports</span>
+</section>
+
+<section class="hero">
+  <div class="hero-text">
+    <h1>Past Reports</h1>
+    <p>Browse screening results, confidence bands, triage actions, and Grad-CAM
+       visualizations from previous inference runs.</p>
+  </div>
+</section>
+
+<!-- Stats summary cards -->
+<section class="stats-row">
+  <div class="stat-card">
+    <div class="stat-label">Total</div>
+    <div class="stat-value">{{ stats.total }}</div>
+  </div>
+  <div class="stat-card accent-green">
+    <div class="stat-label">Negative</div>
+    <div class="stat-value">{{ stats.negative }}</div>
+  </div>
+  <div class="stat-card accent-red">
+    <div class="stat-label">Positive</div>
+    <div class="stat-value">{{ stats.positive }}</div>
+  </div>
+  <div class="stat-card accent-orange">
+    <div class="stat-label">Urgent</div>
+    <div class="stat-value">{{ stats.urgent }}</div>
+  </div>
+  <div class="stat-card accent-blue">
+    <div class="stat-label">Positivity Rate</div>
+    <div class="stat-value">{{ '%.1f'|format(stats.pos_rate) }}%</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Avg Prob</div>
+    <div class="stat-value">{{ '%.3f'|format(stats.avg_cal_prob) }}</div>
+  </div>
+</section>
+
+<!-- Calibration bar -->
+{% if calib %}
+<section class="info-bar">
+  <span>Temperature: <strong>{{ '%.4f'|format(calib.temperature) }}</strong></span>
+  <span>Threshold: <strong>{{ '%.4f'|format(calib.calibrated_threshold) }}</strong></span>
+  <span>ECE (raw): <strong>{{ '%.4f'|format(calib.raw_ece) }}</strong></span>
+  <span>ECE (cal): <strong>{{ '%.4f'|format(calib.cal_ece) }}</strong></span>
+</section>
+{% endif %}
+
+<!-- Filter bar -->
+<section class="panel">
+  <!-- prettier-ignore-start -->
+  <form method="get" class="filters">
+    <input type="text" name="q" value="{{ q }}"
+           placeholder="Search image ID or outcome..." />
+
+    <select name="outcome">
+      <option value="">All Outcomes</option>
+      <option value="POSITIVE" {% if outcome == "POSITIVE" %}selected{% endif %}>Positive</option>
+      <option value="NEGATIVE" {% if outcome == "NEGATIVE" %}selected{% endif %}>Negative</option>
+    </select>
+
+    <select name="band">
+      <option value="">All Bands</option>
+      <option value="HIGH"   {% if band == "HIGH"   %}selected{% endif %}>HIGH</option>
+      <option value="MEDIUM" {% if band == "MEDIUM" %}selected{% endif %}>MEDIUM</option>
+      <option value="LOW"    {% if band == "LOW"    %}selected{% endif %}>LOW</option>
+    </select>
+
+    <select name="urgency">
+      <option value="">All Urgency</option>
+      <option value="URGENT"   {% if urgency == "URGENT"   %}selected{% endif %}>URGENT</option>
+      <option value="STANDARD" {% if urgency == "STANDARD" %}selected{% endif %}>STANDARD</option>
+    </select>
+
+    <select name="sort">
+      <option value="">Default Sort</option>
+      <option value="date_desc" {% if sort == "date_desc" %}selected{% endif %}>Newest First</option>
+      <option value="date_asc"  {% if sort == "date_asc"  %}selected{% endif %}>Oldest First</option>
+      <option value="prob_desc" {% if sort == "prob_desc" %}selected{% endif %}>Highest Prob</option>
+      <option value="prob_asc"  {% if sort == "prob_asc"  %}selected{% endif %}>Lowest Prob</option>
+    </select>
+
+    <select name="page_size">
+      <option value="10"  {% if page_size == 10  %}selected{% endif %}>10 / page</option>
+      <option value="50"  {% if page_size == 50  %}selected{% endif %}>50 / page</option>
+      <option value="100" {% if page_size == 100 %}selected{% endif %}>100 / page</option>
+    </select>
+
+    <button type="submit">Filter</button>
+    {% if q or band or urgency or outcome or sort %}
+    <a href="{{ url_for('reports', page_size=page_size) }}" class="btn btn-ghost">Clear</a>
+    {% endif %}
+  </form>
+  <!-- prettier-ignore-end -->
+
+  <!-- Results meta bar -->
+  <div class="info-bar" style="margin-bottom: 14px">
+    <span>Filtered: <strong>{{ total_items }}</strong> of {{ total_cases }}</span>
+    <span>Page: <strong>{{ page }} / {{ total_pages }}</strong></span>
+    <span>Showing: <strong>{{ rows|length }}</strong> rows</span>
+    <span>{{ '%.1f'|format(route_compute_ms) }} ms</span>
+    <span>Cache: <strong>{{ 'HIT' if data_cache_hit else 'MISS' }}</strong></span>
+  </div>
+
+  <!-- Results table -->
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Image ID</th>
+          <th>Date</th>
+          <th>Outcome</th>
+          <th>Cal. Prob</th>
+          <th>Band</th>
+          <th>Urgency</th>
+          <th>Grad-CAM</th>
+          <th>Report</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr class="{% if row.is_positive %}row-positive{% endif %}">
+          <td class="muted">{{ page_start + loop.index }}</td>
+          <td class="mono">{{ row.image_id }}</td>
+          <td class="muted small">{{ row.date_display }}</td>
+          <td>
+            {% if row.is_positive %}
+              <span class="dot dot-red"></span> Positive
+            {% else %}
+              <span class="dot dot-green"></span> Negative
+            {% endif %}
+          </td>
+          <td>{{ '%.4f'|format(row.cal_prob) if row.cal_prob is not none else '—' }}</td>
+          <td><span class="badge badge-{{ row.band|lower }}">{{ row.band }}</span></td>
+          <td><span class="badge badge-{{ row.urgency|lower }}">{{ row.urgency }}</span></td>
+          <td>
+            {% if row.gradcam_file %}
+            <a href="{{ url_for('serve_gradcam', filename=row.gradcam_file) }}"
+               target="_blank" class="link-icon" title="View Grad-CAM">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <path d="m21 15-5-5L5 21" />
+              </svg>
+            </a>
+            {% else %}
+            <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('case_detail', image_id=row.image_id) }}" class="btn btn-sm">Open</a>
+          </td>
+        </tr>
+        {% endfor %}
+
+        {% if not rows %}
+        <tr>
+          <td colspan="9" class="muted" style="text-align: center; padding: 32px">
+            No cases match your filters.
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  {% if total_pages > 1 %}
+  <div class="filters" style="justify-content: space-between; margin-top: 14px">
+    <div>
+      {% if page > 1 %}
+      <a class="btn" href="{{ url_for('reports', q=q, band=band, urgency=urgency, outcome=outcome, sort=sort, page=page-1, page_size=page_size) }}">← Previous</a>
+      {% else %}
+      <span class="btn btn-ghost" style="opacity: 0.5; pointer-events: none">← Previous</span>
+      {% endif %}
+    </div>
+    <div class="muted small" style="align-self: center">Page {{ page }} of {{ total_pages }}</div>
+    <div>
+      {% if page < total_pages %}
+      <a class="btn" href="{{ url_for('reports', q=q, band=band, urgency=urgency, outcome=outcome, sort=sort, page=page+1, page_size=page_size) }}">Next →</a>
+      {% else %}
+      <span class="btn btn-ghost" style="opacity: 0.5; pointer-events: none">Next →</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
+

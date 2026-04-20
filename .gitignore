@@ -1,0 +1,56 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+
+# Local runtime data
+uploads/
+logs/
+*.log
+*.tmp
+*.temp
+
+# Local environment files
+.env
+.env.*
+!.env.example
+
+# Local databases / coverage
+*.db
+*.sqlite3
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Generated inference artifacts
+download_imp/*
+download
+# Local downloaded data
+data/
+datasets/
+
+# Optional local artifact layout
+
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

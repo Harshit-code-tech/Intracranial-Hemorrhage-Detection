@@ -1,0 +1,171 @@
+{% extends "base.html" %}
+
+{% block title %}{{ row.image_id }} — Report{% endblock %}
+
+{% block content %}
+<!-- Breadcrumb -->
+<section class="breadcrumb">
+  <a href="{{ url_for('home') }}">Home</a>
+  <span class="sep">/</span>
+  <a href="{{ url_for('reports') }}">Reports</a>
+  <span class="sep">/</span>
+  <span class="mono">{{ row.image_id }}</span>
+</section>
+
+<!-- Header -->
+<section class="detail-header">
+  <div>
+    <h1 class="mono">{{ row.image_id }}</h1>
+    <p>
+      {% if row.is_positive %}
+      <span class="dot dot-red"></span> {{ row.outcome }}
+      {% else %}
+      <span class="dot dot-green"></span> {{ row.outcome }}
+      {% endif %}
+    </p>
+    <p class="muted small" style="margin-top: 4px">
+      {% if row.date_display != '—' %}
+      Generated: {{ row.date_display }} UTC
+      {% endif %}
+      {% if payload and payload.report_id %}
+       &middot; Report ID: {{ payload.report_id }}
+      {% endif %}
+    </p>
+  </div>
+  <div class="detail-actions">
+    {% if row.report_file %}
+    <a class="btn"
+       href="{{ url_for('serve_report_json', filename=row.report_file) }}"
+       target="_blank">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+      </svg>
+      Raw JSON
+    </a>
+    {% endif %}
+    <a class="btn" href="{{ url_for('reports') }}">← Back</a>
+  </div>
+</section>
+
+<!-- Two-column grid -->
+<section class="detail-grid">
+  <!-- Left: Prediction Details -->
+  <article class="panel">
+    <h3>Prediction Summary</h3>
+    <div class="kv-group">
+      <div class="kv">
+        <span>Screening Outcome</span>
+        <strong>{{ row.outcome }}</strong>
+      </div>
+      <div class="kv">
+        <span>Calibrated Probability</span>
+        <strong>{{ '%.4f'|format(row.cal_prob) if row.cal_prob is not none else 'N/A' }}</strong>
+      </div>
+      <div class="kv">
+        <span>Raw Probability</span>
+        <strong>{{ '%.4f'|format(row.raw_prob) if row.raw_prob is not none else 'N/A' }}</strong>
+      </div>
+      <div class="kv">
+        <span>Confidence Band</span>
+        <strong><span class="badge badge-{{ row.band|lower }}">{{ row.band }}</span></strong>
+      </div>
+      <div class="kv">
+        <span>Triage Action</span>
+        <strong>{{ row.triage }}</strong>
+      </div>
+      <div class="kv">
+        <span>Urgency</span>
+        <strong><span class="badge badge-{{ row.urgency|lower }}">{{ row.urgency }}</span></strong>
+      </div>
+      <div class="kv">
+        <span>Ground Truth</span>
+        <strong>{{ row.true_label if row.true_label and row.true_label != 'N/A' else 'Not available' }}</strong>
+      </div>
+      <div class="kv">
+        <span>Report Date</span>
+        <strong>{{ row.date_display }}</strong>
+      </div>
+    </div>
+
+    <!-- Confidence bar -->
+    {% if row.cal_prob is not none %}
+    <div class="prob-bar-wrap">
+      <div class="prob-bar-label">
+        <span>0</span>
+        <span>Calibrated probability</span>
+        <span>1</span>
+      </div>
+      <div class="prob-bar">
+        <div class="prob-fill {% if row.cal_prob >= 0.75 %}fill-high{% elif row.cal_prob >= 0.35 %}fill-medium{% else %}fill-low{% endif %}"
+             style="width: {{ (row.cal_prob * 100)|round(1) }}%"></div>
+        <div class="prob-marker"
+             style="left: {{ (row.cal_prob * 100)|round(1) }}%">
+          {{ '%.2f'|format(row.cal_prob) }}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </article>
+
+  <!-- Right: Grad-CAM -->
+  <article class="panel">
+    <h3>Grad-CAM Visualization</h3>
+    {% if row.gradcam_file %}
+    <img class="heatmap-img"
+         src="{{ url_for('serve_gradcam', filename=row.gradcam_file) }}"
+         alt="Grad-CAM for {{ row.image_id }}" />
+    <p class="muted small" style="margin-top: 10px">
+      Highlighted regions indicate areas with greatest influence on the
+      screening decision. These are <strong>not</strong> confirmed anatomical
+      findings.
+    </p>
+    {% else %}
+    <div class="empty-state">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5" opacity="0.3">
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <circle cx="8.5" cy="8.5" r="1.5" />
+        <path d="m21 15-5-5L5 21" />
+      </svg>
+      <p class="muted">No Grad-CAM heatmap available for this case.</p>
+    </div>
+    {% endif %}
+  </article>
+</section>
+
+<!-- Model info (from payload) -->
+{% if payload and payload.screening_module %}
+<section class="panel" style="margin-top: 16px">
+  <h3>Model Information</h3>
+  <div class="kv-group" style="max-width: 500px">
+    <div class="kv">
+      <span>Architecture</span>
+      <strong>{{ payload.screening_module.architecture }}</strong>
+    </div>
+    <div class="kv">
+      <span>Version</span>
+      <strong>{{ payload.screening_module.version }}</strong>
+    </div>
+    <div class="kv">
+      <span>Calibration</span>
+      <strong>{{ payload.screening_module.calibration_method }}</strong>
+    </div>
+    <div class="kv">
+      <span>Decision Threshold</span>
+      <strong>{{ '%.4f'|format(payload.prediction.decision_threshold) }}</strong>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<!-- Disclaimer -->
+<section class="disclaimer-box">
+  <strong>Disclaimer:</strong>
+  This report is produced by an AI-assisted screening tool and does NOT
+  constitute a medical diagnosis. All screening findings must be reviewed and
+  confirmed by a qualified, licensed medical professional before any clinical
+  decision is made.
+</section>
+{% endblock %}

@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+
+{% block title %}About — ICH Screening{% endblock %}
+
+{% block content %}
+<section class="hero">
+  <div class="hero-text">
+    <h1>About This System</h1>
+    <p>
+      AI-Assisted CT-Based Intracranial Hemorrhage Detection with Explainability
+      and Clinical Reporting
+    </p>
+  </div>
+</section>
+
+<!-- System Overview -->
+<section class="panel">
+  <h3>System Overview</h3>
+  <p>
+    This is an AI-assisted screening tool designed to detect intracranial
+    hemorrhage (ICH) from CT brain scans. It combines deep learning with visual
+    explainability, confidence calibration, and structured clinical reporting to
+    support — not replace — medical decision-making.
+  </p>
+  <div class="arch-flow">
+    <div class="arch-step">
+      <div class="arch-num">1</div>
+      <div class="arch-label">CT Brain Image Input</div>
+    </div>
+    <div class="arch-arrow">→</div>
+    <div class="arch-step">
+      <div class="arch-num">2</div>
+      <div class="arch-label">Preprocessing &amp; CT Windowing</div>
+    </div>
+    <div class="arch-arrow">→</div>
+    <div class="arch-step">
+      <div class="arch-num">3</div>
+      <div class="arch-label">2.5D Detection (EfficientNet-B4)</div>
+    </div>
+    <div class="arch-arrow">→</div>
+    <div class="arch-step">
+      <div class="arch-num">4</div>
+      <div class="arch-label">Grad-CAM Explainability</div>
+    </div>
+    <div class="arch-arrow">→</div>
+    <div class="arch-step">
+      <div class="arch-num">5</div>
+      <div class="arch-label">Confidence Calibration</div>
+    </div>
+    <div class="arch-arrow">→</div>
+    <div class="arch-step">
+      <div class="arch-num">6</div>
+      <div class="arch-label">Clinical Report</div>
+    </div>
+  </div>
+</section>
+
+<!-- Technical Details -->
+<section class="about-grid">
+  <article class="panel">
+    <h3>Model Architecture</h3>
+    <div class="kv-group">
+      <div class="kv">
+        <span>Architecture</span><strong>EfficientNet-B4 (timm)</strong>
+      </div>
+      <div class="kv">
+        <span>Input Representation</span><strong>2.5D (prev/center/next)</strong>
+      </div>
+      <div class="kv">
+        <span>Channels</span><strong>9 (3 CT windows × 3 slices)</strong>
+      </div>
+      <div class="kv"><span>Outputs</span><strong>6 heads (any + 5 subtypes)</strong></div>
+      <div class="kv">
+        <span>Inference Strategy</span><strong>5-fold ensemble (logit averaging)</strong>
+      </div>
+    </div>
+  </article>
+
+  <article class="panel">
+    <h3>CT Preprocessing</h3>
+    <div class="kv-group">
+      <div class="kv">
+        <span>Brain Window</span><strong>WC=40, WW=80</strong>
+      </div>
+      <div class="kv">
+        <span>Subdural Window</span><strong>WC=75, WW=215</strong>
+      </div>
+      <div class="kv">
+        <span>Soft Tissue Window</span><strong>WC=40, WW=380</strong>
+      </div>
+      <div class="kv">
+        <span>Channels</span><strong>3 (one per window)</strong>
+      </div>
+      <div class="kv">
+        <span>Format</span><strong>DICOM → HU → windowed RGB</strong>
+      </div>
+    </div>
+  </article>
+
+  <article class="panel">
+    <h3>Calibration</h3>
+    <div class="kv-group">
+      <div class="kv">
+        <span>Method</span
+        ><strong>{{ calib.get('method', calib.get('best_method', 'N/A')) }}</strong>
+      </div>
+      {% if calib %}
+      <div class="kv">
+        <span>Temperature</span
+        ><strong>{{ '%.4f'|format(calib.temperature) }}</strong>
+      </div>
+      <div class="kv">
+        <span>Threshold</span
+        ><strong>{{ '%.4f'|format(calib.calibrated_threshold) }}</strong>
+      </div>
+      {% endif %}
+      <div class="kv">
+        <span>ECE (Raw → Calibrated)</span
+        ><strong>{{ '%.4f'|format(calib.get('raw_ece', 0.0)) }} → {{ '%.4f'|format(calib.get('cal_ece', 0.0)) }}</strong>
+      </div>
+      <div class="kv">
+        <span>Bands</span
+        ><strong>
+          HIGH (≥{{ '%.2f'|format(calib.get('high_threshold', 0.7)) }}) ·
+          MEDIUM ({{ '%.2f'|format(calib.get('low_threshold', 0.3)) }}–{{ '%.2f'|format(calib.get('high_threshold', 0.7)) }}) ·
+          LOW (&lt;{{ '%.2f'|format(calib.get('low_threshold', 0.3)) }})
+        </strong>
+      </div>
+    </div>
+  </article>
+
+  <article class="panel">
+    <h3>Explainability</h3>
+    <div class="kv-group">
+      <div class="kv"><span>Method</span><strong>Grad-CAM</strong></div>
+      <div class="kv">
+        <span>Target Layer</span><strong>Last convolutional block</strong>
+      </div>
+      <div class="kv">
+        <span>Output</span><strong>Heatmap overlay on input</strong>
+      </div>
+      <div class="kv">
+        <span>Purpose</span><strong>Visual evidence for review</strong>
+      </div>
+    </div>
+  </article>
+</section>
+
+<!-- Confidence-Aware Triage -->
+<section class="panel" style="margin-top: 16px">
+  <h3>Confidence-Aware Triage System</h3>
+  <p>
+    Instead of a simple binary output, the system incorporates prediction
+    confidence into a three-band triage workflow:
+  </p>
+
+  <div class="triage-grid">
+    <div class="triage-card triage-high">
+      <div class="triage-header">
+        <span class="badge badge-high">HIGH</span>
+        <span>≥ {{ '%.2f'|format(calib.get('high_threshold', 0.7)) }} calibrated probability</span>
+      </div>
+      <p><strong>If positive:</strong> Urgent radiologist review recommended</p>
+      <p><strong>If negative:</strong> Standard workflow — no urgent action</p>
+    </div>
+
+    <div class="triage-card triage-medium">
+      <div class="triage-header">
+        <span class="badge badge-medium">MEDIUM</span>
+        <span>{{ '%.2f'|format(calib.get('low_threshold', 0.3)) }} – {{ '%.2f'|format(calib.get('high_threshold', 0.7)) }}</span>
+      </div>
+      <p>
+        <strong>If positive:</strong> Prioritised radiologist review recommended
+      </p>
+      <p>
+        <strong>If negative:</strong> Standard workflow — manual review if
+        clinically indicated
+      </p>
+    </div>
+
+    <div class="triage-card triage-low">
+      <div class="triage-header">
+        <span class="badge badge-low">LOW</span>
+        <span>&lt; {{ '%.2f'|format(calib.get('low_threshold', 0.3)) }}</span>
+      </div>
+      <p>
+        <strong>If positive:</strong> Radiologist review recommended — low
+        confidence
+      </p>
+      <p>
+        <strong>If negative:</strong> Manual review recommended — model
+        uncertainty high
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- Dataset -->
+<section class="panel" style="margin-top: 16px">
+  <h3>Dataset</h3>
+  <div class="kv-group" style="max-width: 600px">
+    <div class="kv">
+      <span>Source</span><strong>RSNA Intracranial Hemorrhage Detection</strong>
+    </div>
+    <div class="kv">
+      <span>Modality</span><strong>CT brain (axial slices)</strong>
+    </div>
+    <div class="kv"><span>Format</span><strong>DICOM</strong></div>
+    <div class="kv">
+      <span>Task</span><strong>Any-hemorrhage screening + subtype-aware outputs</strong>
+    </div>
+  </div>
+</section>
+
+<!-- Ethical Considerations -->
+<section class="panel" style="margin-top: 16px">
+  <h3>Ethical Considerations &amp; Limitations</h3>
+
+  <div class="ethics-columns">
+    <div>
+      <h4>This System Is:</h4>
+      <ul class="check-list">
+        <li>A screening and decision-support tool</li>
+        <li>Designed to assist, not replace, medical professionals</li>
+        <li>Transparent via Grad-CAM visual evidence</li>
+        <li>Calibrated for reliable confidence scores</li>
+        <li>Built on publicly available, ethically sourced data</li>
+      </ul>
+    </div>
+    <div>
+      <h4>This System Is NOT:</h4>
+      <ul class="cross-list">
+        <li>A diagnostic device or medical diagnosis tool</li>
+        <li>A replacement for qualified radiologist review</li>
+        <li>Cleared for standalone clinical deployment</li>
+        <li>A substitute for clinical subtype confirmation</li>
+        <li>Validated for real-time hospital use</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- Disclaimer -->
+<section class="disclaimer-box" style="margin-top: 16px">
+  <strong>Important Disclaimer:</strong>
+  This system is produced by an AI-assisted screening tool and does NOT
+  constitute a medical diagnosis. All screening findings must be reviewed and
+  confirmed by a qualified, licensed medical professional before any clinical
+  decision is made. The system is intended solely as a decision-support aid in a
+  screening workflow and is not cleared for standalone diagnostic use.
+</section>
+
+<!-- Technology Stack -->
+<section class="panel" style="margin-top: 16px">
+  <h3>Technology Stack</h3>
+  <div class="tech-tags">
+    <span class="tech-tag">Python</span>
+    <span class="tech-tag">PyTorch</span>
+    <span class="tech-tag">EfficientNet-B4</span>
+    <span class="tech-tag">timm</span>
+    <span class="tech-tag">2.5D Context</span>
+    <span class="tech-tag">5-Fold Ensemble</span>
+    <span class="tech-tag">Isotonic Calibration</span>
+    <span class="tech-tag">OpenCV</span>
+    <span class="tech-tag">NumPy</span>
+    <span class="tech-tag">Pandas</span>
+    <span class="tech-tag">Matplotlib</span>
+    <span class="tech-tag">Grad-CAM</span>
+    <span class="tech-tag">Flask</span>
+    <span class="tech-tag">pydicom</span>
+    <span class="tech-tag">scikit-learn</span>
+  </div>
+</section>
+{% endblock %}

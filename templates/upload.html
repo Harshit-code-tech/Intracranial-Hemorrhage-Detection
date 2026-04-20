@@ -1,0 +1,331 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Scan — ICH Screening{% endblock %}
+
+{% block content %}
+<section class="breadcrumb">
+  <a href="{{ url_for('home') }}">Home</a>
+  <span class="sep">/</span>
+  <span>Upload Scans</span>
+</section>
+
+<section class="upload-hero">
+  <h1>Upload DICOM Scans</h1>
+  <p>
+    Upload one or many CT brain scans for AI-powered hemorrhage screening.
+    A single exam may contain hundreds of slices — all modes below handle
+    that seamlessly.
+  </p>
+</section>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<div class="flash-messages">
+  {% for category, message in messages %}
+  <div class="flash flash-{{ category }}">{{ message }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endwith %}
+
+<!-- ── Tab navigation ──────────────────────────────────────────────── -->
+<div class="upload-tabs" role="tablist">
+  <button class="upload-tab active" data-tab="single"  role="tab">Single File</button>
+  <button class="upload-tab"        data-tab="multi"   role="tab">Multi-File / ZIP</button>
+  {% if local_mode %}
+  <button class="upload-tab"        data-tab="dirscan" role="tab">Scan Directory</button>
+  {% endif %}
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!--  TAB 1 — Single .dcm file                                         -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<section class="panel upload-panel tab-panel active" id="tab-single">
+  <form method="post" action="{{ url_for('analyze') }}"
+        enctype="multipart/form-data" id="singleForm">
+
+    <div class="dropzone" id="dropzoneSingle">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="17 8 12 3 7 8" />
+        <line x1="12" y1="3" x2="12" y2="15" />
+      </svg>
+      <p class="dropzone-text">Drag &amp; drop a .dcm file here</p>
+      <p class="muted small">or click to browse</p>
+      <input type="file" name="file" id="singleInput" accept=".dcm" hidden />
+    </div>
+
+    <div class="file-info" id="singleInfo" style="display: none">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+      </svg>
+      <span id="singleFileName"></span>
+      <button type="button" class="btn btn-sm btn-ghost js-clear-single">Remove</button>
+    </div>
+
+    <button type="submit" class="btn btn-primary" id="singleSubmit" disabled>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+      </svg>
+      Analyze Scan
+    </button>
+  </form>
+
+  <div class="loading-overlay" id="singleOverlay" style="display: none">
+    <div class="spinner"></div>
+    <p>Running AI analysis&hellip;</p>
+    <p class="muted small">This may take a moment on first run while the model loads.</p>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!--  TAB 2 — Multi-file / ZIP upload                                   -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<section class="panel upload-panel tab-panel" id="tab-multi">
+  <form method="post" action="{{ url_for('analyze') }}"
+        enctype="multipart/form-data" id="multiForm">
+
+    <div class="dropzone" id="dropzoneMulti">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="1.5"
+           stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="7" width="20" height="14" rx="2" />
+        <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+      </svg>
+      <p class="dropzone-text">Drag &amp; drop .dcm files or a .zip archive</p>
+      <p class="muted small">Select multiple files, or a single .zip containing DICOM slices</p>
+      <input type="file" name="file" id="multiInput"
+             accept=".dcm,.zip" multiple hidden />
+    </div>
+
+    <div class="file-info" id="multiInfo" style="display: none">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2">
+        <rect x="2" y="7" width="20" height="14" rx="2" />
+        <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+      </svg>
+      <span id="multiFileName"></span>
+      <button type="button" class="btn btn-sm btn-ghost js-clear-multi">Remove all</button>
+    </div>
+
+    <button type="submit" class="btn btn-primary" id="multiSubmit" disabled>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+      </svg>
+      Analyze Batch
+    </button>
+  </form>
+
+  <div class="loading-overlay" id="multiOverlay" style="display: none">
+    <div class="spinner"></div>
+    <p>Uploading files&hellip;</p>
+    <p class="muted small">Large batches may take a moment to upload.</p>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════════════ -->
+<!--  TAB 3 — Directory scan (local mode only)                          -->
+<!-- ════════════════════════════════════════════════════════════════════ -->
+{% if local_mode %}
+<section class="panel upload-panel tab-panel" id="tab-dirscan">
+  <form method="post" action="{{ url_for('analyze_directory') }}" id="dirForm">
+    <label class="dir-label" for="dirPath">
+      Server-side directory containing .dcm files
+    </label>
+    <div class="dir-input-row">
+      <input type="text" name="dir_path" id="dirPath" class="input"
+             placeholder="D:\scans\patient_001"
+             spellcheck="false" autocomplete="off" />
+      <button type="submit" class="btn btn-primary" id="dirSubmit">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8" />
+          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+        </svg>
+        Scan &amp; Analyze
+      </button>
+    </div>
+    <p class="muted small" style="margin-top: 8px">
+      The server will recursively find all <code>.dcm</code> files in this
+      directory and its sub-folders, then run inference on each.
+      This option is only available when running locally.
+    </p>
+  </form>
+</section>
+{% endif %}
+
+<!-- ── How it works ────────────────────────────────────────────────── -->
+<section class="panel" style="margin-top: 16px">
+  <h3>How It Works</h3>
+  <div class="steps-grid">
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-text">
+        <strong>Upload</strong>
+        <p class="muted small">Select DICOM files, a ZIP, or enter a directory path</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-text">
+        <strong>Process</strong>
+        <p class="muted small">CT windowing &amp; preprocessing on each slice</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-text">
+        <strong>Analyze</strong>
+        <p class="muted small">EfficientNet-B0 model with calibrated scoring</p>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-text">
+        <strong>Report</strong>
+        <p class="muted small">Grad-CAM visualization &amp; clinical report per slice</p>
+      </div>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  /* ── Tab switching ────────────────────────────────────────────────── */
+  var tabs   = document.querySelectorAll(".upload-tab");
+  var panels = document.querySelectorAll(".tab-panel");
+
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      tabs.forEach(function (t) { t.classList.remove("active"); });
+      panels.forEach(function (p) { p.classList.remove("active"); });
+      tab.classList.add("active");
+      var target = document.getElementById("tab-" + tab.dataset.tab);
+      if (target) target.classList.add("active");
+    });
+  });
+
+  /* ── Helper: generic dropzone wiring ─────────────────────────────── */
+  function wireDropzone(opts) {
+    var zone    = document.getElementById(opts.zoneId);
+    var input   = document.getElementById(opts.inputId);
+    var info    = document.getElementById(opts.infoId);
+    var label   = document.getElementById(opts.labelId);
+    var clear   = document.querySelector(opts.clearSel);
+    var submit  = document.getElementById(opts.submitId);
+    var form    = document.getElementById(opts.formId);
+    var overlay = document.getElementById(opts.overlayId);
+
+    if (!zone || !input) return;
+
+    function showFiles(files) {
+      var validFiles = [];
+      for (var i = 0; i < files.length; i++) {
+        var name = files[i].name.toLowerCase();
+        if (name.endsWith(".dcm") || name.endsWith(".zip")) {
+          validFiles.push(files[i]);
+        }
+      }
+      if (!validFiles.length) return;
+
+      if (opts.multi) {
+        var totalSizeMB = 0;
+        for (var j = 0; j < validFiles.length; j++) {
+          totalSizeMB += validFiles[j].size / (1024 * 1024);
+        }
+        label.textContent = validFiles.length + " file" +
+          (validFiles.length > 1 ? "s" : "") +
+          " (" + totalSizeMB.toFixed(1) + " MB)";
+      } else {
+        label.textContent = validFiles[0].name;
+      }
+
+      info.style.display  = "flex";
+      zone.style.display  = "none";
+      submit.disabled     = false;
+    }
+
+    function reset() {
+      input.value         = "";
+      info.style.display  = "none";
+      zone.style.display  = "flex";
+      submit.disabled     = true;
+    }
+
+    zone.addEventListener("click", function () { input.click(); });
+
+    zone.addEventListener("dragover", function (e) {
+      e.preventDefault();
+      zone.classList.add("dragover");
+    });
+    zone.addEventListener("dragleave", function () {
+      zone.classList.remove("dragover");
+    });
+    zone.addEventListener("drop", function (e) {
+      e.preventDefault();
+      zone.classList.remove("dragover");
+      if (e.dataTransfer.files.length) {
+        input.files = e.dataTransfer.files;
+        showFiles(e.dataTransfer.files);
+      }
+    });
+
+    input.addEventListener("change", function () {
+      if (input.files.length) showFiles(input.files);
+    });
+
+    if (clear) clear.addEventListener("click", reset);
+
+    if (form && overlay) {
+      form.addEventListener("submit", function () {
+        overlay.style.display = "flex";
+        submit.disabled = true;
+      });
+    }
+  }
+
+  /* ── Wire single-file dropzone ───────────────────────────────────── */
+  wireDropzone({
+    zoneId:    "dropzoneSingle",
+    inputId:   "singleInput",
+    infoId:    "singleInfo",
+    labelId:   "singleFileName",
+    clearSel:  ".js-clear-single",
+    submitId:  "singleSubmit",
+    formId:    "singleForm",
+    overlayId: "singleOverlay",
+    multi:     false,
+  });
+
+  /* ── Wire multi-file dropzone ────────────────────────────────────── */
+  wireDropzone({
+    zoneId:    "dropzoneMulti",
+    inputId:   "multiInput",
+    infoId:    "multiInfo",
+    labelId:   "multiFileName",
+    clearSel:  ".js-clear-multi",
+    submitId:  "multiSubmit",
+    formId:    "multiForm",
+    overlayId: "multiOverlay",
+    multi:     true,
+  });
+
+  /* ── Directory scan: disable submit when input is empty ──────────── */
+  var dirInput  = document.getElementById("dirPath");
+  var dirSubmit = document.getElementById("dirSubmit");
+  if (dirInput && dirSubmit) {
+    function checkDir() { dirSubmit.disabled = !dirInput.value.trim(); }
+    dirInput.addEventListener("input", checkDir);
+    checkDir();
+  }
+})();
+</script>
+{% endblock %}
