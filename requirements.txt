@@ -12,5 +12,6 @@ scikit-learn
 
 blackbox-recorder
 python-dotenv
+huggingface_hub
 
 

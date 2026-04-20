@@ -35,10 +35,19 @@ logs/
 .coverage.*
 htmlcov/
 coverage.xml
+upload_to_huggingface.py
 
-# Generated inference artifacts
+# Generated inference artifacts (keep source code, ignore heavy binaries)
+download_imp/outputs/
+download_imp/dicom_inputs/
+download_imp/*.pth
+download_imp/*.pt
+download_imp/*.pkl
+download_imp/*.onnx
+
 download_imp/*
-download
+# Local downloaded artifacts
+download/
 # Local downloaded data
 data/
 datasets/

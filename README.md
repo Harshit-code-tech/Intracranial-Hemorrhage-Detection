@@ -70,6 +70,36 @@ Model checkpoints and heavy binary artifacts are intentionally ignored for GitHu
 
 This keeps the repository lightweight and reproducible while allowing local/model-private inference.
 
+### Publish Model To Hugging Face
+
+1. Create a token with `Write` access: `https://huggingface.co/settings/tokens`
+1. Set credentials in `.env` (or export in shell):
+
+  ```bash
+  HF_TOKEN=your_hf_token
+  HF_REPO_ID=your-username/ich-b4-model
+  ```
+
+1. Upload model artifacts:
+
+  ```bash
+  python scripts/upload_to_huggingface.py --repo-id "$HF_REPO_ID" --private
+  ```
+
+Published model repository:
+
+- [Hugging Face Model Repo](https://huggingface.co/HarshCode/eff_b4_brain)
+
+### Host On GitHub Pages
+
+1. Ensure your default branch is `main`.
+1. Push this repository with `.github/workflows/pages.yml` and `docs/`.
+1. In GitHub repository settings:
+   1. Open `Settings -> Pages`
+   1. Set source to `GitHub Actions`
+
+The site will be published automatically after push.
+
 ## AI-Assisted CT-Based Intracranial Hemorrhage Detection with Explainability and Clinical Reporting
 
 ---
