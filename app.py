@@ -27,7 +27,7 @@ import time
 import uuid
 import zipfile
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -36,23 +36,30 @@ try:
 except Exception:
     load_dotenv = None
 
+hf_hub_download: Any = None
 try:
-    import blackbox_recorder as bbr
+    import huggingface_hub
+    hf_hub_download = getattr(huggingface_hub, "hf_hub_download", None)
+except Exception:
+    hf_hub_download = None
+
+try:
+    import blackbox_recorder as bbr  # type: ignore[import-untyped]
 except Exception:
     class _NoopRecorder:
-        def configure(self, **_kwargs):
+        def configure(self, **_kwargs: Any) -> None:
             return None
 
-        def start(self):
+        def start(self) -> None:
             return None
 
-        def stop(self):
+        def stop(self) -> None:
             return None
 
-        def save_report(self, _path: str):
+        def save_report(self, _path: str) -> None:
             return None
 
-        def save_json(self, _path: str):
+        def save_json(self, _path: str) -> None:
             return None
 
     bbr = _NoopRecorder()
@@ -110,11 +117,13 @@ if load_dotenv is not None:
     load_dotenv(BASE_DIR / ".env")
 
 APP_DEBUG = _env_bool("ICH_APP_DEBUG", True)
-APP_PORT = _env_int("ICH_APP_PORT", 7860, minimum=1)
+APP_PORT = _env_int("ICH_APP_PORT", _env_int("PORT", 7860, minimum=1), minimum=1)
 MAX_UPLOAD_MB = _env_int("ICH_MAX_UPLOAD_MB", 2048, minimum=1)
 LOG_LEVEL_NAME = os.environ.get("ICH_LOG_LEVEL", "INFO").strip().upper()
 LOG_LEVEL = getattr(logging, LOG_LEVEL_NAME, logging.INFO)
 SECRET_KEY = os.environ.get("ICH_SECRET_KEY", "").strip()
+HF_MODEL_REPO = os.environ.get("ICH_HF_MODEL_REPO", os.environ.get("HF_REPO_ID", "")).strip()
+HF_TOKEN = os.environ.get("ICH_HF_TOKEN", os.environ.get("HF_TOKEN", "")).strip()
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 app.secret_key = SECRET_KEY or os.urandom(24)
@@ -149,7 +158,7 @@ bbr.configure(
 )
 
 
-def _save_trace(image_id: str) -> dict:
+def _save_trace(image_id: str) -> dict[str, str | None]:
     """
     Save the current blackbox trace to logs/ and return metadata about it.
     Called immediately after bbr.stop().
@@ -208,7 +217,7 @@ def _new_batch(total: int, temp_dir: str | None = None) -> str:
     return batch_id
 
 
-def _batch_update(batch_id: str, **kw):
+def _batch_update(batch_id: str, **kw: Any) -> None:
     """Thread-safe update of a batch record."""
     with _BATCHES_LOCK:
         if batch_id in _BATCHES:
@@ -313,6 +322,63 @@ _MODEL: dict[str, Any] = {
 }
 
 
+def _required_model_files(fold_selection: str) -> list[str]:
+    files = [
+        "calibration_params.json",
+        "normalization_stats.json",
+    ]
+    raw = (fold_selection or "ensemble").strip().lower()
+    if raw in ("", "ensemble", "all"):
+        files.extend([f"best_model_fold{i}.pth" for i in range(5)])
+        return files
+    if raw == "best":
+        files.append("best_model_fold4.pth")
+        return files
+    if raw.isdigit():
+        files.append(f"best_model_fold{int(raw)}.pth")
+        return files
+    # Fallback to ensemble behavior for unknown values.
+    files.extend([f"best_model_fold{i}.pth" for i in range(5)])
+    return files
+
+
+def _download_runtime_artifacts_if_needed(fold_selection: str) -> bool:
+    required_files = _required_model_files(fold_selection)
+    missing = [name for name in required_files if not (MODEL_DIR / name).exists()]
+    if not missing:
+        return True
+
+    if not HF_MODEL_REPO:
+        logger.warning(
+            "Missing runtime model files (%s) and ICH_HF_MODEL_REPO/HF_REPO_ID is not set.",
+            ", ".join(missing),
+        )
+        return False
+
+    if hf_hub_download is None:
+        logger.error(
+            "huggingface_hub is not installed, cannot download missing model artifacts."
+        )
+        return False
+
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    logger.info("Downloading missing model artifacts from Hugging Face repo: %s", HF_MODEL_REPO)
+    try:
+        for filename in missing:
+            hf_hub_download(
+                repo_id=HF_MODEL_REPO,
+                filename=filename,
+                repo_type="model",
+                local_dir=str(MODEL_DIR),
+                token=HF_TOKEN or None,
+            )
+            logger.info("Downloaded artifact: %s", filename)
+        return True
+    except Exception as exc:
+        logger.error("Failed downloading model artifacts from Hugging Face: %s", exc)
+        return False
+
+
 def _ensure_model_loaded() -> bool:
     """Lazy-load the ML model on first inference request."""
     if _MODEL["loaded"]:
@@ -325,6 +391,15 @@ def _ensure_model_loaded() -> bool:
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         fold_selection = os.environ.get("ICH_FOLD_SELECTION", "ensemble")
+
+        _download_runtime_artifacts_if_needed(fold_selection)
+
+        if not CALIB_JSON.exists():
+            logger.error(
+                "Missing calibration file at %s. Provide local files or set ICH_HF_MODEL_REPO.",
+                CALIB_JSON,
+            )
+            return False
 
         with open(CALIB_JSON) as f:
             calib_cfg = json.load(f)
@@ -372,7 +447,7 @@ def _ensure_model_loaded() -> bool:
         return False
 
 
-def _run_inference_on_dcm(dcm_path: Path) -> tuple[dict | None, dict | None]:
+def _run_inference_on_dcm(dcm_path: Path) -> tuple[dict[str, Any] | None, dict[str, str | None] | None]:
     """
     Run inference on one .dcm file, with blackbox tracing.
     Returns (report_dict, trace_metadata) or (None, None) on failure.
@@ -427,10 +502,10 @@ def _run_inference_on_dcm(dcm_path: Path) -> tuple[dict | None, dict | None]:
     return report, trace_meta
 
 
-def _append_to_summary_csv(image_id: str, report: dict):
+def _append_to_summary_csv(image_id: str, report: dict[str, Any]) -> None:
     """Append one report row to the summary CSV."""
     pred = report["prediction"]
-    row = {
+    row: dict[str, Any] = {
         "image_id":          image_id,
         "true_label":        "",
         "screening_outcome": pred["screening_outcome"],
@@ -446,7 +521,7 @@ def _append_to_summary_csv(image_id: str, report: dict):
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     with open(SUMMARY_CSV, "a", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=row.keys())
+        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
         if not file_exists:
             writer.writeheader()
         writer.writerow(row)
@@ -767,12 +842,12 @@ def filter_cases(
     return rows
 
 
-def load_logs() -> list[dict]:
+def load_logs() -> list[dict[str, Any]]:
     """Scan the logs/ directory and return metadata for each trace."""
     if not LOGS_DIR.exists():
         return []
 
-    log_files: dict[str, dict] = {}  # base_name -> {txt_file, json_file, ...}
+    log_files: dict[str, dict[str, Any]] = {}  # base_name -> {txt_file, json_file, ...}
 
     for path in sorted(LOGS_DIR.iterdir(), reverse=True):
         if not path.is_file():
@@ -789,7 +864,7 @@ def load_logs() -> list[dict]:
         elif path.suffix == ".json":
             log_files.setdefault(stem, {})["json_file"] = path.name
 
-    entries = []
+    entries: list[dict[str, Any]] = []
     for stem in sorted(log_files, reverse=True):
         info = log_files[stem]
         ts_raw = info.get("timestamp", "")
@@ -815,12 +890,12 @@ def load_logs() -> list[dict]:
 # ══════════════════════════════════════════════════════════════════════════
 
 @app.before_request
-def _start_timer():
+def _start_timer() -> None:  # pyright: ignore[reportUnusedFunction]
     g._start_time = time.perf_counter()
 
 
 @app.after_request
-def _log_timing(response):
+def _log_timing(response: Any) -> Any:  # pyright: ignore[reportUnusedFunction]
     elapsed = (time.perf_counter() - getattr(g, "_start_time", time.perf_counter())) * 1000
     logger.info("%s %s -> %s (%.1f ms)", request.method, request.path, response.status_code, elapsed)
     return response
@@ -867,11 +942,12 @@ def analyze():
     temp_dir: str | None = None      # set if a zip needed extraction
 
     for f in files:
-        fname = f.filename.lower()
+        filename = f.filename or ""
+        fname = filename.lower()
 
         if fname.endswith(".zip"):
             temp_dir = tempfile.mkdtemp(prefix="ich_zip_")
-            zip_save = Path(temp_dir) / secure_filename(f.filename)
+            zip_save = Path(temp_dir) / secure_filename(filename)
             f.save(str(zip_save))
             try:
                 with zipfile.ZipFile(zip_save, "r") as zf:
@@ -884,7 +960,7 @@ def analyze():
             dcm_paths.extend(sorted(Path(temp_dir).rglob("*.dcm")))
 
         elif fname.endswith(".dcm"):
-            safe = secure_filename(f.filename)
+            safe = secure_filename(filename)
             save_path = UPLOAD_DIR / safe
             f.save(str(save_path))
             dcm_paths.append(save_path)
@@ -903,7 +979,7 @@ def analyze():
     if len(dcm_paths) == 1 and temp_dir is None:
         single_path = dcm_paths[0]
         try:
-            report, trace = _run_inference_on_dcm(single_path)
+            report, _trace = _run_inference_on_dcm(single_path)
             if report is None:
                 flash("Model failed to load. Check server logs.", "error")
                 return redirect(url_for("upload"))

@@ -22,6 +22,9 @@ Model weights and related inference artifacts are hosted on Hugging Face:
 
 - [Hugging Face Model Repository](https://huggingface.co/HarshCode/eff_b4_brain)
 
+When model files are not present locally (for example on Render), the app can
+download required artifacts from this Hugging Face repository at runtime.
+
 ## Detailed Performance Report
 
 Detailed performance and B4-specific analysis are documented separately in:
@@ -72,6 +75,8 @@ Important variables in `.env`:
 - `ICH_FOLD_SELECTION`: `ensemble`, `best`, or fold id (`0` to `4`)
 - `ICH_LOCAL_MODE`: enables local directory scanning mode
 - `ICH_LOG_LEVEL`: `DEBUG`, `INFO`, `WARNING`, `ERROR`
+- `ICH_HF_MODEL_REPO`: Hugging Face model repo used for runtime artifact download
+- `ICH_HF_TOKEN`: optional token (required only if the Hugging Face repo is private)
 
 ## Run the Application
 
@@ -84,6 +89,25 @@ Open in browser:
 ```text
 http://127.0.0.1:7860
 ```
+
+## Deploy on Render
+
+This repository includes `render.yaml` for Render deployment.
+
+1. Push the repository to GitHub.
+2. In Render, create a new Blueprint/Web Service from the repository.
+3. Ensure these environment variables are set in Render:
+   - `ICH_HF_MODEL_REPO=HarshCode/eff_b4_brain`
+   - `ICH_HF_TOKEN` (only if repo is private)
+   - `ICH_SECRET_KEY` (recommended custom value)
+4. Deploy. The service will start with:
+
+```bash
+gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 180
+```
+
+Note: first startup can take longer because model artifacts may be downloaded
+from Hugging Face.
 
 ## Basic Usage
 
