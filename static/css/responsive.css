@@ -1,0 +1,75 @@
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .stats-row {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .home-cards-secondary {
+    grid-template-columns: 1fr;
+  }
+  .topbar-inner {
+    padding: 14px 16px;
+  }
+  .detail-grid,
+  .eval-grid,
+  .about-grid,
+  .ethics-columns {
+    grid-template-columns: 1fr;
+  }
+  .triage-grid,
+  .band-grid {
+    grid-template-columns: 1fr;
+  }
+  .arch-flow {
+    justify-content: center;
+  }
+  .home-cards {
+    grid-template-columns: 1fr;
+  }
+  .steps-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .batch-stats-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .stats-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .topbar-inner {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .nav-links {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .detail-header {
+    flex-direction: column;
+  }
+  .filters {
+    flex-direction: column;
+  }
+  .home-hero h1 {
+    font-size: 1.7rem;
+  }
+  .home-card {
+    padding: 28px 20px;
+  }
+  .steps-grid {
+    grid-template-columns: 1fr;
+  }
+  .upload-tabs {
+    flex-wrap: wrap;
+  }
+  .dir-input-row {
+    flex-direction: column;
+  }
+  .dir-input-row .btn-primary {
+    width: 100%;
+  }
+  .batch-done-actions {
+    flex-direction: column;
+  }
+}

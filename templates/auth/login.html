@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Login — ICH Screening</title>
+  <meta name="description" content="Sign in to the ICH Screening AI dashboard."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}"/>
+</head>
+<body>
+<div class="auth-page">
+
+  <!-- ── Left brand panel ── -->
+  <aside class="auth-brand">
+    <div class="auth-brand-logo">
+      <div class="auth-brand-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      <span class="auth-brand-name">ICH Screening</span>
+    </div>
+
+    <div class="auth-headline">
+      <h2>AI-Powered <span class="grad">Hemorrhage</span> Detection</h2>
+      <p>Clinical-grade CT scan analysis with Grad-CAM explainability and automated triage reporting.</p>
+    </div>
+
+    <ul class="auth-features">
+      <li>
+        <span class="feat-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+        </span>
+        Deep learning ICH classification
+      </li>
+      <li>
+        <span class="feat-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        </span>
+        Grad-CAM heatmap visualisation
+      </li>
+      <li>
+        <span class="feat-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        </span>
+        Automated clinical PDF reports
+      </li>
+      <li>
+        <span class="feat-icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </span>
+        Secure, per-user data isolation
+      </li>
+    </ul>
+
+    <!-- CT Scanner Radar Illustration -->
+    <div class="auth-illustration">
+      <svg width="200" height="200" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <radialGradient id="scanGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#6ea8fe" stop-opacity=".18"/>
+            <stop offset="100%" stop-color="#6ea8fe" stop-opacity="0"/>
+          </radialGradient>
+          <clipPath id="scanClip">
+            <circle cx="100" cy="100" r="96"/>
+          </clipPath>
+        </defs>
+
+        <!-- Scanner frame -->
+        <circle cx="100" cy="100" r="96" fill="#07101f" stroke="#243356" stroke-width="2"/>
+
+        <!-- Brain tissue layers (filled — depth via lightness) -->
+        <circle cx="100" cy="100" r="80" fill="#0b1728"/>
+        <circle cx="100" cy="100" r="64" fill="#0e1d32"/>
+        <circle cx="100" cy="100" r="46" fill="#111e34"/>
+        <circle cx="100" cy="100" r="26" fill="#09131e"/>
+
+        <!-- Layer stroke rings -->
+        <circle cx="100" cy="100" r="80" stroke="#1a2d4e" stroke-width="1"/>
+        <circle cx="100" cy="100" r="64" stroke="#162244" stroke-width=".75"/>
+        <circle cx="100" cy="100" r="46" stroke="#162244" stroke-width=".5"/>
+
+        <!-- Crosshair guide lines (clipped to scanner) -->
+        <g clip-path="url(#scanClip)" opacity=".22">
+          <line x1="4" y1="100" x2="196" y2="100" stroke="#6ea8fe" stroke-width=".75"/>
+          <line x1="100" y1="4" x2="100" y2="196" stroke="#6ea8fe" stroke-width=".75"/>
+          <line x1="29" y1="29" x2="171" y2="171" stroke="#6ea8fe" stroke-width=".5"/>
+          <line x1="171" y1="29" x2="29" y2="171" stroke="#6ea8fe" stroke-width=".5"/>
+        </g>
+
+        <!-- Radar sweep wedge: top-right quarter (0° → 90°) -->
+        <!-- Wedge fill -->
+        <path d="M100,100 L100,20 A80,80 0 0,1 180,100 Z" fill="#6ea8fe" opacity=".07"/>
+        <!-- Trailing edge (vertical) -->
+        <line x1="100" y1="100" x2="100" y2="20" stroke="#6ea8fe" stroke-width="1" opacity=".4"/>
+        <!-- Leading edge (horizontal) -->
+        <line x1="100" y1="100" x2="180" y2="100" stroke="#6ea8fe" stroke-width="1.5" opacity=".85"/>
+        <!-- Arc from top to right —  A80,80 0 0,1 means clockwise, rx=ry=80 -->
+        <path d="M100,20 A80,80 0 0,1 180,100" stroke="#6ea8fe" stroke-width="2" stroke-linecap="round" opacity=".9"/>
+
+        <!-- Anchor dots at sweep endpoints -->
+        <circle cx="100" cy="20" r="2.5" fill="#6ea8fe" opacity=".6"/>
+        <circle cx="180" cy="100" r="3.5" fill="#6ea8fe" opacity=".9"/>
+
+        <!-- Cardinal tick marks -->
+        <line x1="100" y1="4"  x2="100" y2="14"  stroke="#6ea8fe" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+        <line x1="100" y1="186" x2="100" y2="196" stroke="#6ea8fe" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+        <line x1="4"   y1="100" x2="14"  y2="100" stroke="#6ea8fe" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+        <line x1="186" y1="100" x2="196" y2="100" stroke="#6ea8fe" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+
+        <!-- Outer scanner ring overlay -->
+        <circle cx="100" cy="100" r="96" fill="none" stroke="#6ea8fe" stroke-width="1" opacity=".35"/>
+
+        <!-- Center reticle -->
+        <circle cx="100" cy="100" r="17" stroke="#6ea8fe" stroke-width=".75" fill="none" opacity=".2"/>
+        <circle cx="100" cy="100" r="10" stroke="#6ea8fe" stroke-width="1"    fill="none" opacity=".45"/>
+        <circle cx="100" cy="100" r="4"  fill="#6ea8fe" opacity=".95"/>
+
+        <!-- Radial glow overlay -->
+        <circle cx="100" cy="100" r="96" fill="url(#scanGlow)"/>
+      </svg>
+    </div>
+  </aside>
+
+  <!-- ── Right form panel ── -->
+  <main class="auth-form-panel">
+    <div class="auth-card">
+      <div class="auth-card-header">
+        <h2>Welcome back</h2>
+        <p>Sign in to your ICH Screening account</p>
+      </div>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="auth-alerts">
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }}">
+                {% if category == 'error' %}
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" flex-shrink="0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                {% else %}
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                {% endif %}
+                {{ message }}
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <form method="POST" class="auth-form" id="loginForm">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <div class="input-wrap">
+            <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <input type="text" id="username" name="username" required autofocus
+                   placeholder="Enter your username" autocomplete="username"/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <div class="input-wrap">
+            <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            <input type="password" id="password" name="password" required
+                   class="has-toggle" placeholder="Enter your password" autocomplete="current-password"/>
+            <button type="button" class="btn-pw-toggle" id="togglePw" aria-label="Toggle password visibility">
+              <svg id="eyeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="auth-row">
+          <label class="form-check">
+            <input type="checkbox" name="remember" id="remember" class="form-check-input"/>
+            <span class="form-check-label">Remember me</span>
+          </label>
+          <a href="{{ url_for('auth.forgot_password') }}" class="auth-link-sm">Forgot password?</a>
+        </div>
+
+        <button type="submit" class="btn-auth-submit" id="loginBtn">Sign In</button>
+      </form>
+
+      <div class="auth-footer">
+        Don't have an account? <a href="{{ url_for('auth.register') }}">Create one</a>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='js/auth-shared.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/login.js') }}" defer></script>
+</body>
+</html>

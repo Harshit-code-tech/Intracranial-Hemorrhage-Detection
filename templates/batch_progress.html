@@ -3,6 +3,7 @@
 {% block title %}Batch Processing — ICH Screening{% endblock %}
 
 {% block content %}
+<div class="batch-page" data-batch-id="{{ batch_id }}" data-status-url="{{ url_for('batch_status', batch_id=batch_id) }}" data-reports-url="{{ url_for('reports') }}">
 <section class="breadcrumb">
   <a href="{{ url_for('home') }}">Home</a>
   <span class="sep">/</span>
@@ -76,109 +77,9 @@
   <h3 class="text-red">Failed Files</h3>
   <ul class="batch-fail-list" id="failList"></ul>
 </section>
+ </div>
 {% endblock %}
 
 {% block scripts %}
-<script>
-(function () {
-  var BATCH_ID    = "{{ batch_id }}";
-  var POLL_MS     = 1000;
-  var statusUrl   = "/batch/status/" + BATCH_ID;
-  var reportsUrl  = "{{ url_for('reports') }}";
-
-  var title        = document.getElementById("batchTitle");
-  var subtitle     = document.getElementById("batchSubtitle");
-  var fill         = document.getElementById("progressFill");
-  var pctLabel     = document.getElementById("progressPct");
-  var currentFile  = document.getElementById("currentFile");
-  var statTotal    = document.getElementById("statTotal");
-  var statProc     = document.getElementById("statProcessed");
-  var statOK       = document.getElementById("statSucceeded");
-  var statFail     = document.getElementById("statFailed");
-  var feedPanel    = document.getElementById("feedPanel");
-  var feedList     = document.getElementById("batchFeed");
-  var donePanel    = document.getElementById("donePanel");
-  var doneSummary  = document.getElementById("doneSummary");
-  var failPanel    = document.getElementById("failPanel");
-  var failList     = document.getElementById("failList");
-
-  var prevIds = [];   // track already-shown image_ids
-
-  function poll() {
-    fetch(statusUrl)
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        var pct = d.total > 0 ? Math.round(d.processed / d.total * 100) : 0;
-
-        /* Update numbers */
-        statTotal.textContent = d.total;
-        statProc.textContent  = d.processed;
-        statOK.textContent    = d.succeeded;
-        statFail.textContent  = d.failed_count;
-
-        /* Progress bar */
-        fill.style.width = pct + "%";
-        pctLabel.textContent = pct + "%";
-
-        /* Current file label */
-        if (d.current_file) {
-          currentFile.textContent = "Processing: " + d.current_file;
-        } else {
-          currentFile.textContent = "";
-        }
-
-        /* Live feed of recently processed IDs */
-        if (d.image_ids && d.image_ids.length) {
-          feedPanel.style.display = "block";
-          d.image_ids.forEach(function (iid) {
-            if (prevIds.indexOf(iid) === -1) {
-              prevIds.push(iid);
-              var li = document.createElement("li");
-              var a  = document.createElement("a");
-              a.href = "/case/" + iid;
-              a.textContent = iid;
-              li.appendChild(a);
-              feedList.insertBefore(li, feedList.firstChild);
-              /* Keep max 20 items visible */
-              while (feedList.children.length > 20) {
-                feedList.removeChild(feedList.lastChild);
-              }
-            }
-          });
-        }
-
-        /* Done? */
-        if (d.status === "completed" || d.status === "failed") {
-          title.textContent = "Batch Complete";
-          subtitle.textContent = "";
-          donePanel.style.display = "block";
-          doneSummary.textContent =
-            d.succeeded + " of " + d.total + " files processed successfully" +
-            (d.failed_count > 0 ? ", " + d.failed_count + " failed" : "") + ".";
-
-          /* Show failed files */
-          if (d.failed_ids && d.failed_ids.length) {
-            failPanel.style.display = "block";
-            d.failed_ids.forEach(function (fid) {
-              var li = document.createElement("li");
-              li.textContent = fid;
-              failList.appendChild(li);
-            });
-          }
-          return; /* stop polling */
-        }
-
-        /* Keep polling */
-        setTimeout(poll, POLL_MS);
-      })
-      .catch(function () {
-        /* Network error — retry after a longer delay */
-        setTimeout(poll, POLL_MS * 3);
-      });
-  }
-
-  /* Start polling immediately */
-  poll();
-})();
-</script>
+<script src="{{ url_for('static', filename='js/batch.js') }}" defer></script>
 {% endblock %}

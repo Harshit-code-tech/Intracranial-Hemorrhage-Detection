@@ -1,0 +1,229 @@
+/* Shared user menu and profile modal styles */
+/* ═══════════════════════════════════════════════════════════════
+   ICH Screening Dashboard — Stylesheet
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  --bg: #070d1a;
+  --bg2: #0c1427;
+  --panel: #111c33;
+  --panel2: #162244;
+  --surface: #1a2850;
+  --text: #e8ecf6;
+  --muted: #8ba0c4;
+  --line: #243356;
+  --accent: #6ea8fe;
+  --green: #34d399;
+  --red: #fb7185;
+  --orange: #fbbf24;
+  --blue: #60a5fa;
+  --radius: 14px;
+}
+
+/* ── Reset ─────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+html {
+  scroll-behavior: smooth;
+}
+body {
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  background:
+    radial-gradient(
+      ellipse 1400px 500px at 5% -5%,
+      #1a2f55 0%,
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse 1200px 500px at 95% -5%,
+      #2a1d46 0%,
+      transparent 55%
+    ),
+    var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ── Layout ────────────────────────────────────────────────── */
+.container {
+  width: min(1240px, 94vw);
+  margin: 0 auto;
+}
+.page {
+  padding: 20px 0 48px;
+}
+
+/* ── Topbar ────────────────────────────────────────────────── */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(7, 13, 26, 0.88);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 24px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  font-size: 1.05rem;
+  color: var(--text);
+  text-decoration: none;
+}
+.brand-icon {
+  color: var(--accent);
+  display: flex;
+}
+.nav-links {
+  display: flex;
+  gap: 6px;
+}
+.nav-links a {
+  padding: 6px 14px;
+  border-radius: 8px;
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.9rem;
+  transition: all 0.15s;
+}
+.nav-links a:hover {
+  color: var(--text);
+  background: var(--panel);
+}
+.nav-links a.active {
+  color: var(--accent);
+  background: rgba(110, 168, 254, 0.1);
+}
+
+/* ── Hero ──────────────────────────────────────────────────── */
+.hero {
+  padding: 8px 0 6px;
+}
+.hero h1 {
+  font-size: 1.8rem;
+  font-weight: 800;
+}
+.hero p {
+  color: var(--muted);
+  margin-top: 6px;
+}
+
+/* ── Stats row ─────────────────────────────────────────────── */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 12px;
+  margin: 16px 0;
+}
+.stat-card {
+  background: linear-gradient(180deg, var(--panel2), var(--panel));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.stat-label {
+  font-size: 0.82rem;
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.stat-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  margin-top: 4px;
+}
+.stat-card.accent-green .stat-value {
+  color: var(--green);
+}
+.stat-card.accent-red .stat-value {
+  color: var(--red);
+}
+.stat-card.accent-orange .stat-value {
+  color: var(--orange);
+}
+.stat-card.accent-blue .stat-value {
+  color: var(--blue);
+}
+
+/* ── Info bar ──────────────────────────────────────────────── */
+.info-bar {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: 0.88rem;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.info-bar strong {
+  color: var(--text);
+}
+
+/* ── Panel ─────────────────────────────────────────────────── */
+.panel {
+  background: linear-gradient(180deg, var(--panel2), var(--panel));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-top: 16px;
+}
+.panel h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+/* ── Filters ───────────────────────────────────────────────── */
+.filters {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.filters input,
+.filters select {
+  flex: 1;
+  min-width: 140px;
+}
+input,
+select {
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  transition: border-color 0.15s;
+}
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+

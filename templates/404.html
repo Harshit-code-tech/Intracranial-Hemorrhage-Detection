@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Page Not Found — ICH Screening</title>
+  <meta name="description" content="The page you requested could not be found."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/error_pages.css') }}"/>
+</head>
+<body>
+<div class="error-page">
+  <!-- background orbs -->
+  <div class="error-orb"></div>
+  <div class="error-orb"></div>
+  <div class="error-orb"></div>
+
+  <span class="error-badge error-badge-404">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    Error 404
+  </span>
+
+  <!-- Glowing code -->
+  <div class="error-code-wrap">
+    <div class="error-code">404</div>
+    <div class="error-scanline"></div>
+  </div>
+
+  <!-- Inline SVG illustration (floating brain scan) -->
+  <div class="error-illustration">
+    <svg width="160" height="110" viewBox="0 0 160 110" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- CT scan ring -->
+      <ellipse cx="80" cy="55" rx="72" ry="48" stroke="#243356" stroke-width="1.5"/>
+      <ellipse cx="80" cy="55" rx="56" ry="36" stroke="#1e3060" stroke-width="1"/>
+      <!-- gantry frame -->
+      <rect x="8" y="18" width="12" height="74" rx="4" fill="#162244" stroke="#243356" stroke-width="1"/>
+      <rect x="140" y="18" width="12" height="74" rx="4" fill="#162244" stroke="#243356" stroke-width="1"/>
+      <!-- scan table -->
+      <rect x="28" y="50" width="104" height="10" rx="4" fill="#111c33" stroke="#243356" stroke-width="1"/>
+      <!-- question mark inside -->
+      <text x="80" y="63" text-anchor="middle" font-family="Inter,sans-serif" font-size="28" font-weight="900"
+            fill="url(#qgrad)" opacity=".9">?</text>
+      <!-- sweep arc -->
+      <path d="M80 7 A48 48 0 0 1 128 55" stroke="#6ea8fe" stroke-width="1.5" stroke-dasharray="6 4" opacity=".4"/>
+      <defs>
+        <linearGradient id="qgrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#6ea8fe"/>
+          <stop offset="100%" stop-color="#a78bfa"/>
+        </linearGradient>
+      </defs>
+    </svg>
+  </div>
+
+  <h1 class="error-title">Page Not Found</h1>
+  <p class="error-desc">
+    We couldn't find the page you were looking for. It may have been moved, deleted,
+    or the URL might be incorrect.
+  </p>
+
+  <div class="error-actions">
+    <a href="{{ url_for('home') }}" class="btn-err-primary">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M3 12L12 3l9 9"/><path d="M9 21V12h6v9"/></svg>
+      Back to Home
+    </a>
+    <button onclick="history.back()" class="btn-err-secondary">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></svg>
+      Go Back
+    </button>
+  </div>
+
+  <p class="error-footer">
+    <a href="{{ url_for('home') }}">ICH Screening</a> — AI-Assisted CT Hemorrhage Detection
+  </p>
+</div>
+</body>
+</html>

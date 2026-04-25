@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: intracranial-hemorrhage-detection
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 180
+    envVars:
+      - key: ICH_APP_DEBUG
+        value: "0"
+      - key: ICH_LOCAL_MODE
+        value: "0"
+      - key: ICH_MAX_UPLOAD_MB
+        value: "256"
+      - key: ICH_HF_MODEL_REPO
+        value: "HarshCode/eff_b4_brain"

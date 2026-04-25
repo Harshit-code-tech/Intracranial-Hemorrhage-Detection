@@ -1,120 +1,146 @@
 {% extends "base.html" %}
 
-{% block title %}ICH Screening — Home{% endblock %}
+{% block title %}ICH Screening — Dashboard{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}"/>
+{% endblock %}
 
 {% block content %}
-<section class="home-hero">
-  <h1>ICH Screening System</h1>
+
+<!-- ── Hero ── -->
+<section class="landing-hero">
+  <div class="landing-badge">
+    <span class="badge-dot"></span>
+    AI-Powered Screening
+  </div>
+  <h1>Intracranial Hemorrhage<br><span class="hero-grad">Detection System</span></h1>
   <p>
-    AI-Assisted CT-Based Intracranial Hemorrhage Detection with
-    Explainability and Clinical Reporting
+    Clinical-grade CT scan analysis powered by deep learning — with Grad-CAM visualisation,
+    automated triage, and exportable PDF reports.
   </p>
+  <div class="hero-cta-row">
+    <a href="{{ url_for('upload') }}" class="btn-hero-primary">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      Upload a Scan
+    </a>
+    <a href="{{ url_for('reports') }}" class="btn-hero-secondary">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+      </svg>
+      View Reports
+    </a>
+  </div>
 </section>
 
-<!-- Quick stats row -->
+<!-- ── Stats ── -->
 {% if stats.total > 0 %}
-<section class="stats-row home-stats">
-  <div class="stat-card">
+<section class="stats-section">
+  <div class="stat-card" style="animation-delay:.05s">
     <div class="stat-label">Total Scans</div>
-    <div class="stat-value">{{ stats.total }}</div>
+    <div class="stat-value" data-count="{{ stats.total }}">0</div>
   </div>
-  <div class="stat-card accent-red">
+  <div class="stat-card accent-red" style="animation-delay:.1s">
     <div class="stat-label">Positive</div>
-    <div class="stat-value">{{ stats.positive }}</div>
+    <div class="stat-value" data-count="{{ stats.positive }}">0</div>
   </div>
-  <div class="stat-card accent-green">
+  <div class="stat-card accent-green" style="animation-delay:.15s">
     <div class="stat-label">Negative</div>
-    <div class="stat-value">{{ stats.negative }}</div>
+    <div class="stat-value" data-count="{{ stats.negative }}">0</div>
   </div>
-  <div class="stat-card accent-orange">
+  <div class="stat-card accent-orange" style="animation-delay:.2s">
     <div class="stat-label">Urgent</div>
-    <div class="stat-value">{{ stats.urgent }}</div>
+    <div class="stat-value" data-count="{{ stats.urgent }}">0</div>
   </div>
-  <div class="stat-card accent-blue">
+  <div class="stat-card accent-blue" style="animation-delay:.25s">
     <div class="stat-label">Positivity Rate</div>
     <div class="stat-value">{{ '%.1f'|format(stats.pos_rate) }}%</div>
   </div>
-  <div class="stat-card">
+  <div class="stat-card" style="animation-delay:.3s">
     <div class="stat-label">Avg Cal. Prob</div>
     <div class="stat-value">{{ '%.3f'|format(stats.avg_cal_prob) }}</div>
   </div>
 </section>
 {% endif %}
 
-<!-- Main action cards -->
-<section class="home-cards">
-  <a href="{{ url_for('upload') }}" class="home-card">
-    <div class="home-card-icon">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="1.5"
-           stroke-linecap="round" stroke-linejoin="round">
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-        <polyline points="17 8 12 3 7 8" />
-        <line x1="12" y1="3" x2="12" y2="15" />
+<!-- ── Quick Actions heading ── -->
+<div class="section-heading">
+  <h2>Quick Actions</h2>
+  <div class="section-line"></div>
+</div>
+
+<!-- ── Main action cards ── -->
+<section class="action-cards">
+  <a href="{{ url_for('upload') }}" class="action-card">
+    <div class="action-card-icon">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
       </svg>
     </div>
     <h2>Upload Scans</h2>
-    <p>
-      Upload single or batch DICOM scans (.dcm / .zip) for AI-powered
-      hemorrhage screening with Grad-CAM visualization.
-    </p>
-    <span class="home-card-action">Upload files &rarr;</span>
+    <p>Upload single or batch DICOM scans (.dcm / .zip) for AI-powered hemorrhage screening
+       with Grad-CAM heatmap visualisation.</p>
+    <span class="action-card-cta">Upload files →</span>
   </a>
 
-  <a href="{{ url_for('reports') }}" class="home-card">
-    <div class="home-card-icon">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="1.5"
-           stroke-linecap="round" stroke-linejoin="round">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="16" y1="13" x2="8" y2="13" />
-        <line x1="16" y1="17" x2="8" y2="17" />
+  <a href="{{ url_for('reports') }}" class="action-card">
+    <div class="action-card-icon">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/>
+        <line x1="16" y1="17" x2="8" y2="17"/>
       </svg>
     </div>
     <h2>Past Reports</h2>
-    <p>
-      Browse {{ stats.total }} screening reports with confidence bands,
-      triage actions, and Grad-CAM heatmaps.
-    </p>
-    <span class="home-card-action">View reports &rarr;</span>
+    <p>Browse {{ stats.total }} screening report{{ 's' if stats.total != 1 }} with confidence bands,
+       triage actions, and Grad-CAM heatmaps.</p>
+    <span class="action-card-cta">View reports →</span>
   </a>
 </section>
 
-<!-- Secondary cards -->
-<section class="home-cards home-cards-secondary">
-  <a href="{{ url_for('logs_page') }}" class="home-card home-card-sm">
-    <div class="home-card-icon">
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="1.5">
-        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+<!-- ── Mini cards ── -->
+<section class="mini-cards">
+  <a href="{{ url_for('logs_page') }}" class="mini-card">
+    <div class="mini-card-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
       </svg>
     </div>
     <h3>Execution Logs</h3>
     <p class="muted small">{{ log_count }} inference trace{{ 's' if log_count != 1 }} recorded</p>
   </a>
 
-  <a href="{{ url_for('evaluation') }}" class="home-card home-card-sm">
-    <div class="home-card-icon">
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="1.5">
-        <line x1="18" y1="20" x2="18" y2="10" />
-        <line x1="12" y1="20" x2="12" y2="4" />
-        <line x1="6" y1="20" x2="6" y2="14" />
+  <a href="{{ url_for('evaluation') }}" class="mini-card">
+    <div class="mini-card-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <line x1="18" y1="20" x2="18" y2="10"/>
+        <line x1="12" y1="20" x2="12" y2="4"/>
+        <line x1="6" y1="20" x2="6" y2="14"/>
       </svg>
     </div>
     <h3>Model Evaluation</h3>
     <p class="muted small">Calibration metrics and band analysis</p>
   </a>
 
-  <a href="{{ url_for('about') }}" class="home-card home-card-sm">
-    <div class="home-card-icon">
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="1.5">
-        <circle cx="12" cy="12" r="10" />
-        <line x1="12" y1="16" x2="12" y2="12" />
-        <line x1="12" y1="8" x2="12.01" y2="8" />
+  <a href="{{ url_for('about') }}" class="mini-card">
+    <div class="mini-card-icon">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="16" x2="12" y2="12"/>
+        <line x1="12" y1="8" x2="12.01" y2="8"/>
       </svg>
     </div>
     <h3>About</h3>
@@ -122,9 +148,54 @@
   </a>
 </section>
 
-<section class="disclaimer-box" style="margin-top: 32px">
-  <strong>Disclaimer:</strong>
-  This is an AI-assisted screening tool and does NOT constitute a medical
-  diagnosis. All findings must be reviewed by a qualified medical professional.
+<!-- ── How it works ── -->
+<section class="how-section">
+  <div class="section-heading">
+    <h2>How It Works</h2>
+    <div class="section-line"></div>
+  </div>
+  <div class="how-steps">
+    <div class="how-step">
+      <div class="how-num">1</div>
+      <h4>Upload DICOM</h4>
+      <p>Upload a .dcm file or a .zip batch. Single slices or full series are both supported.</p>
+    </div>
+    <div class="how-step">
+      <div class="how-num">2</div>
+      <h4>AI Inference</h4>
+      <p>A calibrated deep-learning model scores each slice for ICH probability.</p>
+    </div>
+    <div class="how-step">
+      <div class="how-num">3</div>
+      <h4>Grad-CAM Heatmap</h4>
+      <p>Gradient-weighted class activation maps highlight regions driving the prediction.</p>
+    </div>
+    <div class="how-step">
+      <div class="how-num">4</div>
+      <h4>Clinical Report</h4>
+      <p>An auto-generated PDF report with findings, confidence bands, and triage action.</p>
+    </div>
+  </div>
 </section>
+
+<!-- ── Disclaimer ── -->
+<div class="disclaimer-box" style="margin-top:36px;">
+  <svg class="disclaimer-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"
+       stroke="currentColor" stroke-width="2">
+    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+    <line x1="12" y1="9" x2="12" y2="13"/>
+    <line x1="12" y1="17" x2="12.01" y2="17"/>
+  </svg>
+  <div>
+    <strong>Medical Disclaimer:</strong>
+    This is an AI-assisted screening tool and does <strong>not</strong> constitute a medical diagnosis.
+    All findings must be reviewed and confirmed by a qualified medical professional before
+    any clinical action is taken.
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/home.js') }}" defer></script>
 {% endblock %}

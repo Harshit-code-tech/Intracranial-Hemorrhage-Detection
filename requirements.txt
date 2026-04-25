@@ -1,17 +1,34 @@
-flask
-werkzeug
+# Web Framework & Server
+flask>=3.0.0
+werkzeug>=3.0.0
+gunicorn>=21.0.0
 
-numpy
-pandas
-opencv-python
-pydicom
+# Database & ORM
+SQLAlchemy>=2.0.0
+psycopg2-binary>=2.9.0
+flask-sqlalchemy>=3.1.0
+flask-migrate>=4.0.0
 
-torch
-timm
-scikit-learn
+# Authentication & Security
+flask-login>=0.6.0
+bcrypt>=4.1.0
+python-dotenv>=1.0.0
+cryptography>=41.0.0
 
-blackbox-recorder
-python-dotenv
-huggingface_hub
+# Data Processing & ML
+numpy>=1.24.0
+pandas>=2.0.0
+opencv-python>=4.8.0
+pydicom>=2.4.0
+torch>=2.0.0
+timm>=0.9.0
+scikit-learn>=1.3.0
 
+# Debugging & Monitoring
+blackbox-recorder>=0.2.0
+huggingface_hub>=0.17.0
+
+# Additional utilities
+requests>=2.31.0
+python-dateutil>=2.8.0
 
