@@ -1,0 +1,160 @@
+/* ============================================================
+   EMAIL BASE STYLES
+   Shared across all ICH Screening email templates.
+   Included via Jinja2: {% include 'email/css/_base.css' %}
+   NOTE: Email clients do NOT load external stylesheets.
+         This file is injected inline at render time by Flask.
+============================================================ */
+
+/* ── Reset ──────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; border-collapse: collapse; }
+img { border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; -ms-interpolation-mode: bicubic; }
+a { text-decoration: none; }
+
+/* ── Color Scheme Declaration ───────────────────────────── */
+:root {
+  color-scheme: light dark;
+}
+
+/* ── LIGHT THEME (default) ──────────────────────────────── */
+body {
+  background-color: #f0f4f8;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color: #1a202c;
+}
+
+.email-wrapper {
+  width: 100%;
+  background-color: #f0f4f8;
+  padding: 40px 16px;
+}
+
+.email-container {
+  max-width: 560px;
+  margin: 0 auto;
+  background-color: #ffffff;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+.email-header {
+  background: linear-gradient(135deg, #0d1b3e 0%, #0a2a4a 50%, #0d1b3e 100%);
+  padding: 40px 32px 36px;
+  text-align: center;
+}
+
+.brand-icon {
+  width: 36px;
+  height: 36px;
+  background: rgba(0, 212, 255, 0.15);
+  border: 1.5px solid rgba(0, 212, 255, 0.5);
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-right: 10px;
+}
+
+.brand-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.5px;
+}
+
+.header-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-top: 16px;
+  letter-spacing: -0.3px;
+}
+
+.header-subtitle {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 6px;
+}
+
+/* ── Body ────────────────────────────────────────────────── */
+.email-body {
+  padding: 36px 32px;
+}
+
+.greeting {
+  font-size: 15px;
+  color: #4a5568;
+  line-height: 1.7;
+  margin-bottom: 28px;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 24px 0;
+}
+
+.security-notice {
+  font-size: 12px;
+  color: #a0aec0;
+  line-height: 1.7;
+  margin-bottom: 8px;
+}
+
+/* ── Footer ──────────────────────────────────────────────── */
+.email-footer {
+  background-color: #f7f8fb;
+  border-top: 1px solid #e2e8f0;
+  padding: 20px 32px;
+  text-align: center;
+}
+
+.footer-brand {
+  font-size: 13px;
+  font-weight: 700;
+  color: #4a5568;
+  margin-bottom: 4px;
+}
+
+.footer-text {
+  font-size: 11px;
+  color: #a0aec0;
+  line-height: 1.6;
+}
+
+/* ── DARK THEME (shared overrides) ──────────────────────── */
+@media (prefers-color-scheme: dark) {
+  body { background-color: #0b0f1a !important; color: #e2e8f0 !important; }
+
+  .email-wrapper { background-color: #0b0f1a !important; }
+
+  .email-container {
+    background-color: #111827 !important;
+    box-shadow: 0 4px 32px rgba(0, 0, 0, 0.5) !important;
+    border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  }
+
+  .email-header {
+    background: linear-gradient(135deg, #060d1f 0%, #081428 50%, #060d1f 100%) !important;
+  }
+
+  .greeting      { color: #a0aec0 !important; }
+  .security-notice { color: #4a5568 !important; }
+  .divider       { border-top-color: rgba(255, 255, 255, 0.07) !important; }
+
+  .email-footer  { background-color: #0d1424 !important; border-top-color: rgba(255, 255, 255, 0.07) !important; }
+  .footer-brand  { color: #718096 !important; }
+  .footer-text   { color: #4a5568 !important; }
+}
+
+/* ── RESPONSIVE (shared) ─────────────────────────────────── */
+@media only screen and (max-width: 560px) {
+  .email-body   { padding: 28px 20px !important; }
+  .email-header { padding: 32px 20px 28px !important; }
+  .email-footer { padding: 16px 20px !important; }
+}

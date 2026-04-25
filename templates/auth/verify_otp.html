@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Verify Email OTP — ICH Screening</title>
+  <meta name="description" content="Verify your email with one-time password."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}"/>
+</head>
+<body>
+<div class="auth-page">
+  <aside class="auth-brand">
+    <div class="auth-brand-logo">
+      <div class="auth-brand-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      <span class="auth-brand-name">ICH Screening</span>
+    </div>
+
+    <div class="auth-headline">
+      <h2>Check Your <span class="grad">Email</span></h2>
+      <p>We sent a 6-digit code to your inbox. Enter it below to verify your identity and activate your account.</p>
+    </div>
+
+    <ul class="auth-features">
+      <li><span class="feat-icon">1</span>Open the email from ICH Screening</li>
+      <li><span class="feat-icon">2</span>Copy the 6-digit code</li>
+      <li><span class="feat-icon">3</span>Enter it here — valid for 10 minutes</li>
+    </ul>
+  </aside>
+
+  <main class="auth-form-panel">
+    <div class="auth-card">
+      <div class="auth-card-header">
+        <h2>Enter your verification code</h2>
+        <p>Sent to <strong>{{ email or 'your registered email' }}</strong></p>
+      </div>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="auth-alerts">
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      <form method="POST" class="auth-form" id="otpForm">
+        <input type="hidden" name="otp" id="otpCombined"/>
+        <div class="otp-grid" style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px;">
+          <input type="text" inputmode="numeric" maxlength="1" name="d1" class="otp-digit" required/>
+          <input type="text" inputmode="numeric" maxlength="1" name="d2" class="otp-digit" required/>
+          <input type="text" inputmode="numeric" maxlength="1" name="d3" class="otp-digit" required/>
+          <input type="text" inputmode="numeric" maxlength="1" name="d4" class="otp-digit" required/>
+          <input type="text" inputmode="numeric" maxlength="1" name="d5" class="otp-digit" required/>
+          <input type="text" inputmode="numeric" maxlength="1" name="d6" class="otp-digit" required/>
+        </div>
+
+        <button type="submit" class="btn-auth-submit" style="margin-top:16px;">Verify &amp; Activate Account</button>
+      </form>
+
+      <form method="POST" action="{{ url_for('auth.resend_otp') }}" style="margin-top:12px;">
+        <button type="submit" class="btn-auth-submit" style="background:#0f1b31;border:1px solid #2a3f68;">Didn't receive it? Resend code</button>
+      </form>
+
+      <div class="auth-footer">
+        Wrong account? <a href="{{ url_for('auth.login') }}">Back to sign in</a>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='js/verify-otp.js') }}" defer></script>
+</body>
+</html>

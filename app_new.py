@@ -70,6 +70,7 @@ from flask import (
     send_from_directory, url_for
 )
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_login import current_user, login_required
 
 # Import new security and auth modules
@@ -126,6 +127,7 @@ LOCAL_MODE = _env_bool("ICH_LOCAL_MODE", True)
 # ══════════════════════════════════════════════════════════════════════════
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_port=1)
 
 # Configuration
 app.config.update(

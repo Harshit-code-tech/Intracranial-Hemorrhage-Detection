@@ -1,0 +1,87 @@
+/* ============================================================
+   OTP EMAIL — COMPONENT STYLES
+   Styles specific to the OTP/email-verification email template.
+   Included via Jinja2: {% include 'email/css/_otp.css' %}
+============================================================ */
+
+/* ── OTP Label ───────────────────────────────────────────── */
+.otp-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #718096;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+/* ── OTP Box ─────────────────────────────────────────────── */
+.otp-box {
+  background: #f7f8fb;
+  border: 2px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 28px 20px;
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.otp-digits {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: 12px;
+  color: #0d1b3e;
+  text-indent: 12px; /* compensates for letter-spacing gap on last char */
+}
+
+.otp-accent {
+  color: #0078d4;
+}
+
+.otp-expiry {
+  font-size: 12px;
+  color: #718096;
+  margin-top: 10px;
+}
+
+.otp-expiry strong {
+  color: #e53e3e;
+}
+
+/* ── Info Block ──────────────────────────────────────────── */
+.info-block {
+  background: #ebf8ff;
+  border-left: 4px solid #0078d4;
+  border-radius: 0 8px 8px 0;
+  padding: 14px 16px;
+  margin-bottom: 24px;
+  font-size: 13px;
+  color: #2c5282;
+  line-height: 1.6;
+}
+
+/* ── DARK THEME (OTP-specific overrides) ─────────────────── */
+@media (prefers-color-scheme: dark) {
+  .otp-label  { color: #4a5568 !important; }
+
+  .otp-box    { background: #1a2035 !important; border-color: rgba(0, 212, 255, 0.25) !important; }
+  .otp-digits { color: #e2e8f0 !important; }
+  .otp-accent { color: #00d4ff !important; }
+  .otp-expiry { color: #718096 !important; }
+  .otp-expiry strong { color: #fc8181 !important; }
+
+  .info-block {
+    background: rgba(0, 120, 212, 0.1) !important;
+    border-left-color: #00d4ff !important;
+    color: #90cdf4 !important;
+  }
+}
+
+/* ── RESPONSIVE (OTP-specific) ───────────────────────────── */
+@media only screen and (max-width: 560px) {
+  .otp-digits {
+    font-size: 34px !important;
+    letter-spacing: 8px !important;
+    text-indent: 8px !important;
+  }
+}

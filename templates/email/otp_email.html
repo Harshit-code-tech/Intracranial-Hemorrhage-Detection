@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="supported-color-schemes" content="light dark" />
+  <title>{{ title }} — ICH Screening</title>
+  <style>
+    {# ── Shared base: reset, layout, header, footer, dark theme ── #}
+    {% include 'email/css/_base.css' %}
+
+    {# ── OTP-specific: digit display, info block, dark overrides ── #}
+    {% include 'email/css/_otp.css' %}
+  </style>
+</head>
+<body>
+<div class="email-wrapper">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td align="center">
+        <div class="email-container">
+
+          <!-- ═══════════ HEADER ═══════════ -->
+          <div class="email-header">
+
+            <!-- Brand -->
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td align="center">
+                  <table role="presentation" cellpadding="0" cellspacing="0">
+                    <tr>
+                      <td style="padding-right:10px; vertical-align:middle;">
+                        <div class="brand-icon">
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                               stroke="#00d4ff" stroke-width="2.5"
+                               stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+                          </svg>
+                        </div>
+                      </td>
+                      <td style="vertical-align:middle;">
+                        <span class="brand-name">ICH Screening</span>
+                      </td>
+                    </tr>
+                  </table>
+                </td>
+              </tr>
+            </table>
+
+            <!-- Brain / Neural SVG graphic -->
+            <div style="margin: 20px auto 0; text-align: center;">
+              <svg width="64" height="64" viewBox="0 0 64 64" fill="none"
+                   xmlns="http://www.w3.org/2000/svg">
+                <circle cx="32" cy="32" r="30"
+                        fill="rgba(0,212,255,0.08)"
+                        stroke="rgba(0,212,255,0.4)"
+                        stroke-width="1.5"/>
+                <path d="M22 28c0-5.5 4-10 10-10 3 0 5.5 1.2 7.2 3.2"
+                      stroke="#00d4ff" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+                <path d="M39 22c2.5 1.5 4 4.2 4 7 0 4-2.8 7.5-7 9"
+                      stroke="#00d4ff" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+                <path d="M36 38c-1.2.7-2.6 1-4 1-5.5 0-10-4-10-9 0-2.2.8-4.2 2-5.8"
+                      stroke="#00d4ff" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+                <path d="M24 32h4l2-5 3 10 2-5h5"
+                      stroke="rgba(0,212,255,0.85)" stroke-width="1.6"
+                      stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                <circle cx="32" cy="21" r="1.5" fill="rgba(0,212,255,0.6)"/>
+                <circle cx="22" cy="35" r="1.5" fill="rgba(0,212,255,0.6)"/>
+                <circle cx="40" cy="30" r="1.5" fill="rgba(0,212,255,0.6)"/>
+              </svg>
+            </div>
+
+            <div class="header-title">{{ title }}</div>
+            <div class="header-subtitle">ICH Screening — Intracranial Hemorrhage Detection</div>
+          </div>
+          <!-- ═══════════ END HEADER ═══════════ -->
+
+          <!-- ═══════════ BODY ═══════════ -->
+          <div class="email-body">
+
+            <p class="greeting">
+              {% if recipient_name %}Hi <strong>{{ recipient_name }}</strong>,{% else %}Hi there,{% endif %}<br/><br/>
+              {% if purpose == 'verify_email' %}
+                Welcome to <strong>ICH Screening</strong>. You're one step away from accessing
+                our intracranial hemorrhage detection platform. Enter the verification code below
+                to confirm your email address and activate your account.
+              {% else %}
+                A verification code was requested for your <strong>ICH Screening</strong> account.
+                Enter the code below to continue. If this wasn't you, you can safely disregard
+                this message — your account remains secure.
+              {% endif %}
+            </p>
+
+            <!-- OTP Box -->
+            <div class="otp-label">Verification Code &mdash; Valid for 10 minutes</div>
+            <div class="otp-box">
+              <div class="otp-digits">
+                {%- set chars = otp_code | list -%}
+                {%- for i in range(chars | length) -%}
+                  {%- if i == 3 %}<span class="otp-accent">{{ chars[i] }}</span>
+                  {%- else %}{{ chars[i] }}{%- endif -%}
+                {%- endfor -%}
+              </div>
+              <div class="otp-expiry">
+                Do not share this code. It expires in <strong>10 minutes</strong>.
+              </div>
+            </div>
+
+            <!-- Info notice -->
+            <div class="info-block">
+              <strong>Security reminder:</strong> ICH Screening will never ask you to share this
+              code over the phone, email, or chat. If anyone requests it, treat it as a phishing attempt.
+            </div>
+
+            <hr class="divider"/>
+
+            <p class="security-notice">
+              Didn't sign up for ICH Screening? No worries — simply ignore this email.
+              Your code is useless without your login credentials, and your account will
+              remain inactive unless this code is entered.
+            </p>
+
+          </div>
+          <!-- ═══════════ END BODY ═══════════ -->
+
+          <!-- ═══════════ FOOTER ═══════════ -->
+          <div class="email-footer">
+            <div class="footer-brand">ICH Screening</div>
+            <div class="footer-text">
+              This message was sent automatically. Replies to this address are not monitored.<br/>
+              &copy; {{ current_year }} ICH Screening &mdash; Intracranial Hemorrhage Detection Platform.
+            </div>
+          </div>
+          <!-- ═══════════ END FOOTER ═══════════ -->
+
+        </div><!-- /email-container -->
+      </td>
+    </tr>
+  </table>
+</div>
+</body>
+</html>

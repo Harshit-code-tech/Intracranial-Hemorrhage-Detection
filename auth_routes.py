@@ -1,16 +1,248 @@
-"""
-Authentication routes: login, register, logout
-"""
+"""Authentication routes: login, register, logout, password reset and OTP verification."""
+import hashlib
 import logging
-from flask import Blueprint, render_template, request, redirect, url_for, flash, jsonify
-from flask_login import login_user, logout_user, current_user
-from models import db, User
-from auth_utils import (
-    validate_username, validate_password, validate_email, log_audit
+import os
+import secrets
+import smtplib
+from datetime import datetime, timedelta
+from email.message import EmailMessage
+from urllib.parse import urljoin
+
+from flask import (
+    Blueprint,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
 )
+from flask_login import current_user, login_required, login_user, logout_user
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from sqlalchemy import func, or_
+
+from auth_utils import log_audit, validate_email, validate_password, validate_username
+from models import User, db
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
+
+OTP_SESSION_KEY = "pending_otp"
+
+
+def _parse_bool(raw: str | None, default: bool = False) -> bool:
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _auth_email_debug_enabled() -> bool:
+    return _parse_bool(os.environ.get("ICH_DEBUG_AUTH_EMAILS"), False)
+
+
+def _hash_otp(code: str) -> str:
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def _generate_otp() -> str:
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def _otp_payload_from_session() -> dict:
+    payload = session.get(OTP_SESSION_KEY)
+    return payload if isinstance(payload, dict) else {}
+
+
+def _store_otp(email: str, purpose: str, user_id: int | None = None) -> str:
+    code = _generate_otp()
+    expires_at = datetime.utcnow() + timedelta(minutes=10)
+    session[OTP_SESSION_KEY] = {
+        "email": email,
+        "purpose": purpose,
+        "user_id": user_id,
+        "otp_hash": _hash_otp(code),
+        "expires_at": expires_at.isoformat(),
+        "attempts": 0,
+    }
+    session.modified = True
+    return code
+
+
+def _clear_otp() -> None:
+    session.pop(OTP_SESSION_KEY, None)
+    session.modified = True
+
+
+def _extract_otp_from_form() -> str:
+    direct = request.form.get("otp", "").strip()
+    if direct:
+        return direct
+    digits = [request.form.get(f"d{i}", "").strip() for i in range(1, 7)]
+    return "".join(digits)
+
+
+def _validate_otp(submitted_code: str, expected_purpose: str) -> tuple[bool, str, dict | None]:
+    payload = _otp_payload_from_session()
+    if not payload:
+        return False, "OTP session is missing or expired. Please request a new code.", None
+
+    if payload.get("purpose") != expected_purpose:
+        return False, "OTP purpose mismatch. Please request a new code.", None
+
+    expires_raw = payload.get("expires_at")
+    try:
+        expires_at = datetime.fromisoformat(expires_raw)
+    except Exception:
+        _clear_otp()
+        return False, "OTP is invalid. Please request a new code.", None
+
+    if datetime.utcnow() > expires_at:
+        _clear_otp()
+        return False, "OTP expired. Please request a new code.", None
+
+    attempts = int(payload.get("attempts", 0))
+    if attempts >= 5:
+        _clear_otp()
+        return False, "Too many failed attempts. Please request a new code.", None
+
+    if _hash_otp(submitted_code) != payload.get("otp_hash"):
+        payload["attempts"] = attempts + 1
+        session[OTP_SESSION_KEY] = payload
+        session.modified = True
+        return False, "Invalid OTP code.", None
+
+    return True, "", payload
+
+
+def _otp_email_content(code: str, purpose: str) -> tuple[str, str]:
+    """Return (plain_text, html) for OTP emails."""
+    if purpose == "verify_email":
+        title = "Verify your ICH Screening account"
+        body_line = (
+            "Welcome to ICH Screening. You're one step away from accessing our platform.\n"
+            "Enter the verification code below to confirm your email address and activate your account."
+        )
+    else:
+        title = "Your ICH Screening verification code"
+        body_line = (
+            "A verification code was requested for your ICH Screening account.\n"
+            "Enter the code below to continue. If this wasn't you, your account remains secure."
+        )
+
+    plain = (
+        f"{title}\n"
+        f"{'=' * len(title)}\n\n"
+        f"Hi there,\n\n"
+        f"{body_line}\n\n"
+        f"  Verification Code: {code}\n"
+        f"  Valid for: 10 minutes\n\n"
+        "Security reminder: ICH Screening will never ask you to share this code "
+        "over the phone, email, or chat. If anyone requests it, treat it as a phishing attempt.\n\n"
+        "Didn't sign up? Simply ignore this email — your account will remain inactive "
+        "unless this code is entered.\n"
+    )
+
+    try:
+        from flask import render_template
+        html = render_template(
+            "email/otp_email.html",
+            title=title,
+            otp_code=code,
+            purpose=purpose,
+            recipient_name=None,
+            current_year=datetime.utcnow().year,
+        )
+    except Exception as exc:
+        logger.warning("Could not render OTP HTML email template: %s", exc)
+        html = None
+
+    return plain, html
+
+
+def _password_reset_email_content(reset_link: str) -> tuple[str, str]:
+    """Return (plain_text, html) for password-reset emails."""
+    _reset_title = "ICH Screening — Password Reset"
+    plain = (
+        f"{_reset_title}\n"
+        f"{'─' * len(_reset_title)}\n\n"
+        "Hi there,\n\n"
+        "We received a request to reset the password for your ICH Screening account.\n"
+        "Use the link below to choose a new password — it only takes a moment.\n\n"
+        f"  Reset link: {reset_link}\n\n"
+        "This link is single-use and expires in 30 minutes.\n\n"
+        "Didn't request this? You can ignore this email — your password has not been\n"
+        "changed and your account remains intact.\n"
+    )
+
+    try:
+        from flask import render_template
+        html = render_template(
+            "email/password_reset_email.html",
+            reset_link=reset_link,
+            recipient_name=None,
+            current_year=datetime.utcnow().year,
+        )
+    except Exception as exc:
+        logger.warning("Could not render password-reset HTML email template: %s", exc)
+        html = None
+
+    return plain, html
+
+
+def _send_email(to_email: str, subject: str, body: str, html_body: str | None = None) -> bool:
+    """Send a (optionally multipart HTML + plain-text) email via SMTP."""
+    smtp_host = os.environ.get("SMTP_HOST", os.environ.get("EMAIL_HOST", "")).strip()
+    smtp_user = os.environ.get("SMTP_USER", os.environ.get("EMAIL_HOST_USER", "")).strip()
+    smtp_pass = os.environ.get("SMTP_PASSWORD", os.environ.get("EMAIL_HOST_PASSWORD", "")).strip()
+    smtp_from = os.environ.get("SMTP_FROM", os.environ.get("EMAIL_FROM", smtp_user)).strip()
+    port_raw = os.environ.get("SMTP_PORT", os.environ.get("EMAIL_PORT", "587"))
+    smtp_port = int(port_raw)
+    use_tls = _parse_bool(os.environ.get("SMTP_USE_TLS", os.environ.get("EMAIL_USE_TLS")), True)
+
+    if not smtp_host or not smtp_from:
+        logger.error(
+            "SMTP not configured: set SMTP_HOST/SMTP_FROM or EMAIL_HOST/EMAIL_FROM (and credentials if required)."
+        )
+        return False
+
+    msg = EmailMessage()
+    msg["Subject"] = subject
+    msg["From"] = smtp_from
+    msg["To"] = to_email
+    # Plain-text part (always present as fallback for non-HTML clients)
+    msg.set_content(body)
+    # HTML alternative part (preferred by modern email clients when present)
+    if html_body:
+        msg.add_alternative(html_body, subtype="html")
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
+            server.ehlo()
+            if use_tls:
+                server.starttls()
+                server.ehlo()
+            if smtp_user and smtp_pass:
+                server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+        return True
+    except Exception as exc:
+        logger.error("Failed to send email to %s: %s", to_email, exc)
+        return False
+
+
+def _token_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(current_app.config["SECRET_KEY"], salt="ich-password-reset")
+
+
+def _build_external_link(endpoint: str, **values: object) -> str:
+    """Build externally reachable link, preferring explicit public base URL when configured."""
+    public_base_url = os.environ.get("ICH_PUBLIC_BASE_URL", "").strip()
+    if public_base_url:
+        relative_path = url_for(endpoint, _external=False, **values)
+        return urljoin(public_base_url.rstrip("/") + "/", relative_path.lstrip("/"))
+    return url_for(endpoint, _external=True, **values)
 
 
 @auth_bp.route('/register', methods=['GET', 'POST'])
@@ -60,17 +292,32 @@ def register():
             user = User(
                 username=username,
                 email=email,
-                full_name=full_name
+                full_name=full_name,
+                is_active=False,
             )
             user.set_password(password)
             
             db.session.add(user)
             db.session.commit()
             
+            otp_code = _store_otp(email=user.email, purpose="verify_email", user_id=user.id)
+            _plain, _html = _otp_email_content(otp_code, "verify_email")
+            sent = _send_email(
+                user.email,
+                "Your ICH Screening verification code",
+                _plain,
+                html_body=_html,
+            )
+            if _auth_email_debug_enabled():
+                logger.info("DEV OTP for %s: %s", user.email, otp_code)
+
             log_audit('user_registered', user_id=user.id, status='success')
-            
-            flash('Registration successful! Please log in.', 'success')
-            return redirect(url_for('auth.login'))
+            if sent:
+                flash('Registration successful. We sent a verification code to your email.', 'success')
+            else:
+                flash('Registration successful, but email delivery failed. Configure SMTP and resend OTP.', 'warning')
+
+            return redirect(url_for('auth.verify_otp', purpose='verify_email', email=user.email))
         
         except Exception as e:
             db.session.rollback()
@@ -89,25 +336,44 @@ def login():
         return redirect(url_for('home'))
     
     if request.method == 'POST':
-        username = request.form.get('username', '').strip()
+        identifier = request.form.get('identifier', request.form.get('username', '')).strip()
+        normalized_identifier = identifier.lower()
         password = request.form.get('password', '')
-        remember = request.form.get('remember', False)
-        
-        user = User.query.filter_by(username=username).first()
+        remember = bool(request.form.get('remember', False))
+
+        user = User.query.filter(
+            or_(
+                func.lower(User.username) == normalized_identifier,
+                func.lower(User.email) == normalized_identifier,
+            )
+        ).first()
         
         if not user:
-            logger.warning(f"Login attempt with non-existent username: {username}")
-            log_audit('login_failed', status='failure', details=f'User not found: {username}')
+            logger.warning("Login attempt with non-existent identifier: %s", identifier)
+            log_audit('login_failed', status='failure', details=f'User not found: {identifier}')
             flash('Invalid username or password', 'error')
             return render_template('auth/login.html'), 401
         
         if not user.is_active:
-            log_audit('login_failed', user_id=user.id, status='failure', details='Account inactive')
-            flash('Your account has been deactivated', 'error')
-            return render_template('auth/login.html'), 403
+            otp_code = _store_otp(email=user.email, purpose="verify_email", user_id=user.id)
+            _plain, _html = _otp_email_content(otp_code, "verify_email")
+            sent = _send_email(
+                user.email,
+                "Your ICH Screening verification code",
+                _plain,
+                html_body=_html,
+            )
+            if _auth_email_debug_enabled():
+                logger.info("DEV OTP resend/login for %s: %s", user.email, otp_code)
+            log_audit('login_failed', user_id=user.id, status='failure', details='Email not verified')
+            if sent:
+                flash('Please verify your email. A fresh OTP code was sent.', 'info')
+            else:
+                flash('Please verify your email. OTP generation worked but SMTP is not configured.', 'warning')
+            return redirect(url_for('auth.verify_otp', purpose='verify_email', email=user.email))
         
         if not user.check_password(password):
-            logger.warning(f"Failed login attempt for user: {username}")
+            logger.warning("Failed login attempt for identifier: %s", identifier)
             log_audit('login_failed', user_id=user.id, status='failure', details='Invalid password')
             flash('Invalid username or password', 'error')
             return render_template('auth/login.html'), 401
@@ -141,22 +407,147 @@ def logout():
 
 @auth_bp.route('/forgot-password', methods=['GET', 'POST'])
 def forgot_password():
-    """Forgot password — shows a polished form; no email is sent (SMTP not configured)."""
+    """Forgot password route: issue signed reset link and send email."""
     if current_user.is_authenticated:
         return redirect(url_for('home'))
 
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
-        # We always return the same response to prevent user enumeration.
-        logger.info(f"Password reset requested for email: {email}")
-        log_audit('password_reset_requested', status='info', details=f'Email: {email}')
-        # Redirect with ?sent=1 so the template can show the success state
+        user = User.query.filter_by(email=email).first()
+
+        if user:
+            token = _token_serializer().dumps({"email": user.email, "purpose": "reset_password"})
+            reset_link = _build_external_link('auth.reset_password', token=token)
+            _plain, _html = _password_reset_email_content(reset_link)
+            sent = _send_email(
+                user.email,
+                'Reset your ICH Screening password',
+                _plain,
+                html_body=_html,
+            )
+            if _auth_email_debug_enabled():
+                logger.info("DEV reset link for %s: %s", user.email, reset_link)
+            log_audit(
+                'password_reset_requested',
+                user_id=user.id,
+                status='success' if sent else 'failure',
+                details='Reset email sent' if sent else 'SMTP failed',
+            )
+        else:
+            log_audit('password_reset_requested', status='info', details=f'Unknown email: {email}')
+            flash('No account exists with this email address.', 'error')
+            return render_template('auth/forgot_password.html'), 404
+
         return redirect(url_for('auth.forgot_password') + '?sent=1')
 
     return render_template('auth/forgot_password.html')
 
 
+@auth_bp.route('/verify-otp', methods=['GET', 'POST'])
+def verify_otp():
+    """Verify one-time password for account email verification."""
+    purpose = request.args.get('purpose', 'verify_email')
+    payload = _otp_payload_from_session()
+    email = payload.get('email') or request.args.get('email', '')
+
+    if request.method == 'POST':
+        submitted = _extract_otp_from_form()
+        if len(submitted) != 6 or not submitted.isdigit():
+            flash('Please enter the 6-digit OTP code.', 'error')
+            return render_template('auth/verify_otp.html', email=email, purpose=purpose), 400
+
+        ok, msg, verified_payload = _validate_otp(submitted, purpose)
+        if not ok:
+            flash(msg, 'error')
+            return render_template('auth/verify_otp.html', email=email, purpose=purpose), 400
+
+        user_id = verified_payload.get("user_id") if verified_payload else None
+        user = User.query.get(int(user_id)) if user_id else None
+        if not user:
+            _clear_otp()
+            flash('Verification session is invalid. Please register again.', 'error')
+            return redirect(url_for('auth.register'))
+
+        user.is_active = True
+        db.session.commit()
+        _clear_otp()
+        log_audit('email_verified', user_id=user.id, status='success')
+        flash('Email verified. You can now sign in.', 'success')
+        return redirect(url_for('auth.login'))
+
+    return render_template('auth/verify_otp.html', email=email, purpose=purpose)
+
+
+@auth_bp.route('/resend-otp', methods=['POST'])
+def resend_otp():
+    """Resend OTP for the current verification session."""
+    payload = _otp_payload_from_session()
+    if not payload:
+        flash('No active OTP session. Please register again.', 'error')
+        return redirect(url_for('auth.register'))
+
+    email = payload.get("email", "")
+    purpose = payload.get("purpose", "verify_email")
+    user_id = payload.get("user_id")
+    new_code = _store_otp(email=email, purpose=purpose, user_id=user_id)
+    _plain, _html = _otp_email_content(new_code, purpose)
+    sent = _send_email(email, "Your ICH Screening verification code", _plain, html_body=_html)
+    if _auth_email_debug_enabled():
+        logger.info("DEV OTP resend for %s: %s", email, new_code)
+
+    if sent:
+        flash('A new OTP code was sent to your email.', 'success')
+    else:
+        flash('Failed to send OTP email. Please configure SMTP settings.', 'error')
+    return redirect(url_for('auth.verify_otp', purpose=purpose, email=email))
+
+
+@auth_bp.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token: str):
+    """Reset password using signed token sent by email."""
+    try:
+        payload = _token_serializer().loads(token, max_age=1800)
+    except SignatureExpired:
+        flash('Password reset link has expired. Please request a new one.', 'error')
+        return redirect(url_for('auth.forgot_password'))
+    except BadSignature:
+        flash('Invalid password reset link.', 'error')
+        return redirect(url_for('auth.forgot_password'))
+
+    if payload.get('purpose') != 'reset_password':
+        flash('Invalid password reset link.', 'error')
+        return redirect(url_for('auth.forgot_password'))
+
+    email = payload.get('email', '').strip().lower()
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        flash('Invalid password reset link.', 'error')
+        return redirect(url_for('auth.forgot_password'))
+
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        confirm_password = request.form.get('confirm_password', '')
+
+        if password != confirm_password:
+            flash('Passwords do not match.', 'error')
+            return render_template('auth/reset_password.html', token=token), 400
+
+        valid, msg = validate_password(password)
+        if not valid:
+            flash(msg, 'error')
+            return render_template('auth/reset_password.html', token=token), 400
+
+        user.set_password(password)
+        db.session.commit()
+        log_audit('password_reset_completed', user_id=user.id, status='success')
+        flash('Password updated successfully. Please sign in.', 'success')
+        return redirect(url_for('auth.login'))
+
+    return render_template('auth/reset_password.html', token=token)
+
+
 @auth_bp.route('/profile', methods=['GET'])
+@login_required
 def profile():
     """View user profile"""
     if not current_user.is_authenticated:
@@ -166,6 +557,7 @@ def profile():
 
 
 @auth_bp.route('/change-password', methods=['POST'])
+@login_required
 def change_password():
     """Change user password"""
     if not current_user.is_authenticated:
