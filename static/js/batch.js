@@ -40,7 +40,7 @@
           statTotal.textContent = data.total;
           statProc.textContent = data.processed;
           statOK.textContent = data.succeeded;
-          statFail.textContent = data.failed_count;
+          statFail.textContent = data.failed_ids ? data.failed_ids.length : 0;
 
           fill.style.width = pct + '%';
           pctLabel.textContent = pct + '%';
@@ -68,7 +68,8 @@
             title.textContent = 'Batch Complete';
             subtitle.textContent = '';
             donePanel.style.display = 'block';
-            doneSummary.textContent = data.succeeded + ' of ' + data.total + ' files processed successfully' + (data.failed_count > 0 ? ', ' + data.failed_count + ' failed' : '') + '.';
+            var failCount = data.failed_ids ? data.failed_ids.length : 0;
+            doneSummary.textContent = data.succeeded + ' of ' + data.total + ' files processed successfully' + (failCount > 0 ? ', ' + failCount + ' failed' : '') + '.';
 
             if (data.failed_ids && data.failed_ids.length) {
               failPanel.style.display = 'block';

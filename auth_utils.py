@@ -4,7 +4,7 @@ Authentication utilities and decorators for user management and security
 import os
 import logging
 from functools import wraps
-from flask import session, redirect, url_for, request, g, abort
+from flask import session, redirect, url_for, request, g, abort, has_request_context
 from flask_login import LoginManager, current_user
 from models import db, User, AuditLog
 from datetime import datetime
@@ -30,6 +30,8 @@ def load_user(user_id):
 
 def get_client_ip():
     """Extract client IP address from request"""
+    if not has_request_context():
+        return 'system'
     if request.headers.get('X-Forwarded-For'):
         return request.headers.get('X-Forwarded-For').split(',')[0].strip()
     return request.remote_addr or 'unknown'

@@ -74,7 +74,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_login import current_user, login_required
 
 # Import new security and auth modules
-from models import db, User, ScreeningReport
+from models import db, User, ScreeningReport, ScreeningUpload
 from auth_utils import init_auth, log_audit, get_client_ip
 from auth_routes import auth_bp
 from data_isolation import UserDataManager
@@ -312,7 +312,7 @@ def _run_inference_on_dcm(dcm_path: Path, user_id: int) -> tuple[dict[str, Any] 
     
     ri_mod = _MODEL["inference_mod"]
     image_id = dcm_path.stem
-    user_reports_dir = UserDataManager().get_user_reports_dir(user_id)
+    user_reports_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(user_id)
     
     bbr.start()
     
@@ -343,10 +343,21 @@ def _run_inference_on_dcm(dcm_path: Path, user_id: int) -> tuple[dict[str, Any] 
         with open(report_path, "w") as f:
             json.dump(report, f, indent=2)
         
+        upload = ScreeningUpload(
+            user_id=user_id,
+            file_name=dcm_path.name,
+            original_filename=dcm_path.name,
+            file_size=dcm_path.stat().st_size if dcm_path.exists() else 0,
+            file_path=str(dcm_path.relative_to(BASE_DIR)) if dcm_path.is_relative_to(BASE_DIR) else str(dcm_path),
+            processing_status='completed'
+        )
+        db.session.add(upload)
+        db.session.flush()
+
         # Save to database
         screening_report = ScreeningReport(
             user_id=user_id,
-            upload_id=0,  # Will be set by caller if needed
+            upload_id=upload.id,
             image_id=image_id,
             screening_outcome=pred.get("screening_outcome"),
             raw_probability=pred.get("raw_probability"),
@@ -411,45 +422,46 @@ def _batch_update(batch_id: str, **kw: Any) -> None:
 
 def _run_batch_worker(batch_id: str, dcm_paths: list[Path], user_id: int):
     """Process multiple DICOM files in background"""
-    succeeded_ids = []
-    failed_ids = []
-    
-    for i, path in enumerate(dcm_paths, 1):
-        image_id = path.stem
-        _batch_update(batch_id, current_file=image_id, processed=i - 1)
+    with app.app_context():
+        succeeded_ids = []
+        failed_ids = []
         
-        try:
-            report, _ = _run_inference_on_dcm(path, user_id)
-            if report:
-                succeeded_ids.append(image_id)
-            else:
+        for i, path in enumerate(dcm_paths, 1):
+            image_id = path.stem
+            _batch_update(batch_id, current_file=image_id, processed=i - 1)
+            
+            try:
+                report, _ = _run_inference_on_dcm(path, user_id)
+                if report:
+                    succeeded_ids.append(image_id)
+                else:
+                    failed_ids.append(image_id)
+            except Exception as e:
+                logger.error(f"Batch {batch_id}: failed {image_id} — {e}")
                 failed_ids.append(image_id)
-        except Exception as e:
-            logger.error(f"Batch {batch_id}: failed {image_id} — {e}")
-            failed_ids.append(image_id)
+            
+            _batch_update(
+                batch_id,
+                processed=i,
+                succeeded=len(succeeded_ids),
+                image_ids=list(succeeded_ids),
+                failed_ids=list(failed_ids),
+            )
+        
+        # Clean up
+        with _BATCHES_LOCK:
+            b = _BATCHES.get(batch_id, {})
+            td = b.get("temp_dir")
+        if td and Path(td).exists():
+            shutil.rmtree(td, ignore_errors=True)
         
         _batch_update(
             batch_id,
-            processed=i,
-            succeeded=len(succeeded_ids),
-            image_ids=list(succeeded_ids),
-            failed_ids=list(failed_ids),
+            status="completed",
+            current_file="",
+            finished_at=datetime.datetime.now().isoformat(),
         )
-    
-    # Clean up
-    with _BATCHES_LOCK:
-        b = _BATCHES.get(batch_id, {})
-        td = b.get("temp_dir")
-    if td and Path(td).exists():
-        shutil.rmtree(td, ignore_errors=True)
-    
-    _batch_update(
-        batch_id,
-        status="completed",
-        current_file="",
-        finished_at=datetime.datetime.now().isoformat(),
-    )
-    logger.info(f"Batch {batch_id} complete: {len(succeeded_ids)}/{len(dcm_paths)}, {len(failed_ids)} failed")
+        logger.info(f"Batch {batch_id} complete: {len(succeeded_ids)}/{len(dcm_paths)}, {len(failed_ids)} failed")
 
 def _start_batch(dcm_paths: list[Path], user_id: int, temp_dir: str | None = None) -> str:
     """Start async batch processing"""
@@ -636,7 +648,7 @@ def analyze():
         flash("No files were uploaded.", "error")
         return redirect(url_for("upload"))
     
-    user_upload_dir = UserDataManager().get_user_upload_dir(current_user.id)
+    user_upload_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_upload_dir(current_user.id)
     user_upload_dir.mkdir(parents=True, exist_ok=True)
     
     dcm_paths: list[Path] = []
@@ -711,9 +723,17 @@ def analyze_directory():
         flash("Please enter a directory path.", "error")
         return redirect(url_for("upload"))
 
+    if len(dir_path_str) > 4096:
+        flash("Path is too long to be a valid directory.", "error")
+        return redirect(url_for("upload"))
+
     scan_dir = Path(dir_path_str)
-    if not scan_dir.is_dir():
-        flash(f"Directory not found: {dir_path_str}", "error")
+    try:
+        if not scan_dir.is_dir():
+            flash(f"Directory not found: {dir_path_str}", "error")
+            return redirect(url_for("upload"))
+    except OSError:
+        flash("Invalid directory path format.", "error")
         return redirect(url_for("upload"))
 
     dcm_paths = sorted(scan_dir.rglob("*.dcm"))
@@ -832,7 +852,7 @@ def case_detail(image_id):
     if not report:
         abort(404)
     
-    user_reports_dir = UserDataManager().get_user_reports_dir(current_user.id)
+    user_reports_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(current_user.id)
     report_path = user_reports_dir / f"{image_id}_report.json"
     
     if not report_path.exists():
@@ -905,7 +925,7 @@ def evaluation():
 def serve_gradcam(filename: str):
     """Serve a user's Grad-CAM image from their report directory."""
     safe_name = Path(filename).name
-    reports_dir = UserDataManager().get_user_reports_dir(current_user.id)
+    reports_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(current_user.id)
     return send_from_directory(reports_dir, safe_name)
 
 @app.errorhandler(401)

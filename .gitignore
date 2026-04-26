@@ -54,7 +54,7 @@ datasets/
 
 # Optional local artifact layout
 
-
+notebool/
 # Jupyter
 .ipynb_checkpoints/
 
