@@ -36,7 +36,7 @@ def init_security(app):
             "script-src 'self' 'unsafe-inline'; "  # Minimal unsafe-inline for compatibility
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
             "font-src 'self' https://fonts.gstatic.com; "
-            "img-src 'self' data:; "
+            "img-src 'self' data: https://res.cloudinary.com; "
             "connect-src 'self'; "
             "frame-ancestors 'self'; "
             "base-uri 'self'; "

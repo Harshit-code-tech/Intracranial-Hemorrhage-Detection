@@ -6,12 +6,25 @@ inference utilities in download_imp/run_inference.py.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
 import cv2
 import numpy as np
 import torch
+
+try:
+    from groq import Groq
+except ImportError:
+    Groq = None
+
+try:
+    import cloudinary
+    import cloudinary.uploader
+    import cloudinary.api
+except ImportError:
+    cloudinary = None
 
 from download_imp import run_inference as core
 
@@ -137,6 +150,53 @@ def infer_single(
     }
 
 
+def generate_medical_summary(inference: dict[str, Any], calib_cfg: dict[str, Any], report: dict[str, Any]) -> str:
+    """Generate a medical summary using Groq LLM API."""
+    if not Groq:
+        return "LLM integration not available (groq package not installed)."
+        
+    groq_api_key = os.environ.get("GROQ_API_KEY")
+    if not groq_api_key:
+        return "LLM integration not configured (Missing GROQ_API_KEY)."
+
+    try:
+        client = Groq(api_key=groq_api_key)
+        
+        prob = float(inference.get("cal_prob_any", 0.0))
+        threshold = float(calib_cfg.get("threshold_at_spec90", 0.5))
+        is_positive = prob >= threshold
+        
+        triage = report.get("triage", {})
+        action = triage.get("action", "Unknown")
+        urgency = triage.get("urgency", "Unknown")
+        
+        prompt = f"""
+        You are an expert AI medical assistant analyzing a CT scan for Intracranial Hemorrhage.
+        
+        Scan Results:
+        - Probability of Hemorrhage: {prob:.2%}
+        - Decision Threshold: {threshold:.2%}
+        - AI Assessment: {"Positive for Hemorrhage" if is_positive else "Negative for Hemorrhage"}
+        - Urgency: {urgency}
+        - Recommended Action: {action}
+        
+        Based on this data, write a concise, professional 3-sentence medical triage summary. 
+        Focus strictly on the AI's findings. Do not hallucinate patient data.
+        """
+        
+        model_name = os.environ.get("LLM_MODEL", "llama-3.1-8b-instant")
+        response = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model=model_name,
+            temperature=0.2,
+            max_tokens=150,
+        )
+        
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return f"Failed to generate LLM summary: {str(e)}"
+
+
 def build_report(
     image_id: str,
     inference: dict[str, Any],
@@ -178,5 +238,36 @@ def build_report(
     report["prediction"]["decision_threshold"] = report["prediction"].get("decision_threshold_any", threshold)
     report["prediction"]["raw_probability"] = round(float(inference["raw_prob_any"]), 6)
     report["prediction"]["calibrated_probability"] = round(float(inference["cal_prob_any"]), 6)
+
+    report["llm_summary"] = generate_medical_summary(inference, calib_cfg, report)
+
+    # Cloudinary Integration
+    cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME")
+    api_key = os.environ.get("CLOUDINARY_API_KEY")
+    api_secret = os.environ.get("CLOUDINARY_API_SECRET")
+    
+    if cloudinary and cloud_name and api_key and api_secret:
+        try:
+            cloudinary.config(
+                cloud_name=cloud_name,
+                api_key=api_key,
+                api_secret=api_secret,
+                secure=True
+            )
+            
+            # Upload preview
+            preview_res = cloudinary.uploader.upload(str(preview_path), folder="ich_previews")
+            report["cloudinary_preview_url"] = preview_res.get("secure_url")
+            
+            # Upload heatmap
+            heatmap_res = cloudinary.uploader.upload(str(heatmap_path), folder="ich_heatmaps")
+            report["cloudinary_heatmap_url"] = heatmap_res.get("secure_url")
+            
+            # Delete local copies to save space since we have them in the cloud
+            preview_path.unlink(missing_ok=True)
+            heatmap_path.unlink(missing_ok=True)
+            
+        except Exception as e:
+            print(f"Cloudinary upload failed: {e}")
 
     return report

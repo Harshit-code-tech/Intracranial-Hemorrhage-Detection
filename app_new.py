@@ -366,7 +366,9 @@ def _run_inference_on_dcm(dcm_path: Path, user_id: int) -> tuple[dict[str, Any] 
             decision_threshold=pred.get("decision_threshold"),
             triage_action=report.get("triage", {}).get("action"),
             urgency=report.get("triage", {}).get("urgency"),
+            llm_summary=report.get("llm_summary"),
             report_json_path=str(report_path.relative_to(BASE_DIR)),
+            gradcam_image_path=report.get("cloudinary_heatmap_url") or str((user_reports_dir / f"{image_id}_gradcam.png").relative_to(BASE_DIR)),
             generated_at=datetime.datetime.utcnow(),
         )
         db.session.add(screening_report)
@@ -491,7 +493,7 @@ class CaseRow:
     urgency: str = "N/A"
     generated_at: str = ""
     report_file: str | None = None
-    gradcam_file: str | None = None
+    gradcam_url: str | None = None
     
     @property
     def date_display(self) -> str:
@@ -515,6 +517,13 @@ def _load_user_cases(user_id: int) -> list[CaseRow]:
     
     cases = []
     for r in reports:
+        # Fallback for old records with missing gradcam_image_path
+        g_url = r.gradcam_image_path
+        if not g_url:
+            fallback_path = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(current_user.id) / f"{r.image_id}_gradcam.png"
+            if fallback_path.exists():
+                g_url = url_for('serve_gradcam', filename=fallback_path.name)
+
         cases.append(CaseRow(
             image_id=r.image_id,
             outcome=r.screening_outcome or "Unknown",
@@ -525,6 +534,7 @@ def _load_user_cases(user_id: int) -> list[CaseRow]:
             urgency=r.urgency or "N/A",
             generated_at=r.generated_at.isoformat() if r.generated_at else "",
             report_file=Path(r.report_json_path).name if r.report_json_path else None,
+            gradcam_url=g_url,
         ))
     
     return cases
@@ -545,7 +555,7 @@ def compute_stats(rows: list[CaseRow]) -> dict[str, Any]:
         "urgent": urgent,
         "avg_cal_prob": avg_cal,
         "pos_rate": pos_rate,
-        "heatmaps": sum(1 for r in rows if r.gradcam_file),
+        "heatmaps": sum(1 for r in rows if r.gradcam_url),
     }
 
 
@@ -718,7 +728,7 @@ def analyze_directory():
     if not LOCAL_MODE:
         abort(403)
 
-    dir_path_str = request.form.get("dir_path", "").strip()
+    dir_path_str = request.form.get("dir_path", "").strip().strip("'\"")
     if not dir_path_str:
         flash("Please enter a directory path.", "error")
         return redirect(url_for("upload"))
@@ -727,7 +737,7 @@ def analyze_directory():
         flash("Path is too long to be a valid directory.", "error")
         return redirect(url_for("upload"))
 
-    scan_dir = Path(dir_path_str)
+    scan_dir = Path(dir_path_str).expanduser().resolve()
     try:
         if not scan_dir.is_dir():
             flash(f"Directory not found: {dir_path_str}", "error")
@@ -848,24 +858,49 @@ def reports():
 @login_required
 def case_detail(image_id):
     """View screening report details"""
-    report = ScreeningReport.query.filter_by(user_id=current_user.id, image_id=image_id).first()
-    if not report:
-        abort(404)
+    report_record = ScreeningReport.query.filter_by(user_id=current_user.id, image_id=image_id).first()
     
     user_reports_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(current_user.id)
-    report_path = user_reports_dir / f"{image_id}_report.json"
-    
-    if not report_path.exists():
-        abort(404)
-    
-    try:
-        with open(report_path) as f:
-            report_data = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        abort(500)
-    
-    log_audit("report_viewed", user_id=current_user.id, resource_type="report", resource_id=report.id)
-    return render_template("detail.html", report=report_data)
+    report_data = None
+    if report_record and report_record.report_json_path:
+        rp = Path(BASE_DIR) / report_record.report_json_path
+        if rp.exists():
+            with open(rp, "r") as f:
+                report_data = json.load(f)
+
+    # Use existing record details or construct a CaseRow
+    if report_record:
+        g_url = report_record.gradcam_image_path
+        if not g_url:
+            fallback_path = user_reports_dir / f"{image_id}_gradcam.png"
+            if fallback_path.exists():
+                g_url = url_for('serve_gradcam', filename=fallback_path.name)
+
+        row = CaseRow(
+            image_id=image_id,
+            outcome=report_record.screening_outcome or "Unknown",
+            raw_prob=report_record.raw_probability,
+            cal_prob=report_record.calibrated_probability,
+            band=report_record.confidence_band or "N/A",
+            triage=report_record.triage_action or "N/A",
+            urgency=report_record.urgency or "N/A",
+            generated_at=report_record.generated_at.isoformat() if report_record.generated_at else "",
+            gradcam_url=g_url
+        )
+    else:
+        # fallback
+        row = CaseRow(
+            image_id=image_id, outcome="Unknown", raw_prob=None, cal_prob=None,
+            band="N/A", triage="N/A", urgency="N/A", generated_at=""
+        )
+
+    return render_template(
+        "detail.html",
+        image_id=image_id,
+        row=row,
+        payload=report_data,
+        report_record=report_record
+    )
 
 @app.route("/logs")
 @login_required
@@ -927,6 +962,67 @@ def serve_gradcam(filename: str):
     safe_name = Path(filename).name
     reports_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(current_user.id)
     return send_from_directory(reports_dir, safe_name)
+
+@app.route("/report/<path:filename>")
+@login_required
+def serve_report_json(filename: str):
+    """Serve a user's JSON report."""
+    safe_name = Path(filename).name
+    reports_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(current_user.id)
+    return send_from_directory(reports_dir, safe_name)
+
+@app.route("/report/<image_id>/delete", methods=["POST"])
+@login_required
+def delete_report(image_id: str):
+    """Delete a single screening report and its local files."""
+    report = ScreeningReport.query.filter_by(user_id=current_user.id, image_id=image_id).first()
+    if not report:
+        flash("Report not found.", "error")
+        return redirect(url_for("reports"))
+
+    # Delete local files
+    user_reports_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(current_user.id)
+    for suffix in ("_report.json", "_gradcam.png", "_preview.png"):
+        fp = user_reports_dir / f"{image_id}{suffix}"
+        fp.unlink(missing_ok=True)
+
+    # Delete associated upload record
+    if report.upload_id:
+        upload = db.session.get(ScreeningUpload, report.upload_id)
+        if upload:
+            db.session.delete(upload)
+        else:
+            db.session.delete(report)
+    else:
+        db.session.delete(report)
+
+    db.session.commit()
+    log_audit("report_deleted", user_id=current_user.id, resource_type="report", resource_id=image_id)
+    flash(f"Report {image_id} deleted.", "success")
+    return redirect(url_for("reports"))
+
+
+@app.route("/reports/delete-all", methods=["POST"])
+@login_required
+def delete_all_reports():
+    """Delete ALL reports for the current user quickly."""
+    import shutil
+    
+    # 1. Delete physical files securely by dropping the entire user reports folder
+    user_reports_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(current_user.id)
+    shutil.rmtree(user_reports_dir, ignore_errors=True)
+    user_reports_dir.mkdir(parents=True, exist_ok=True)
+    
+    # 2. Bulk delete database records
+    # Because of cascade rules, deleting uploads will automatically delete reports too.
+    # But to be completely safe, we can delete reports directly as well.
+    report_count = db.session.query(ScreeningReport).filter_by(user_id=current_user.id).delete()
+    upload_count = db.session.query(ScreeningUpload).filter_by(user_id=current_user.id).delete()
+    
+    db.session.commit()
+    log_audit("all_reports_deleted", user_id=current_user.id, resource_type="report", resource_id="all")
+    flash(f"All {report_count} reports and their files have been deleted.", "success")
+    return redirect(url_for("reports"))
 
 @app.errorhandler(401)
 def unauthorized(e):

@@ -80,6 +80,7 @@ class ScreeningReport(db.Model):
     # Triage information
     triage_action = db.Column(db.String(100))
     urgency = db.Column(db.String(50))
+    llm_summary = db.Column(db.Text)
     
     # Ground truth (for validation only)
     true_label = db.Column(db.String(100))
@@ -104,7 +105,7 @@ class AuditLog(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
     action = db.Column(db.String(100), nullable=False)  # login, logout, upload, delete, download, etc.
     resource_type = db.Column(db.String(50))  # upload, report, etc.
-    resource_id = db.Column(db.Integer)
+    resource_id = db.Column(db.String(255))
     details = db.Column(db.Text)  # JSON or plain text with additional info
     ip_address = db.Column(db.String(45))  # IPv4 or IPv6
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
