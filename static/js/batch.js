@@ -10,6 +10,7 @@
 
     var title = document.getElementById('batchTitle');
     var subtitle = document.getElementById('batchSubtitle');
+    var queueStatus = document.getElementById('queueStatus');
     var fill = document.getElementById('progressFill');
     var pctLabel = document.getElementById('progressPct');
     var currentFile = document.getElementById('currentFile');
@@ -41,6 +42,16 @@
           statProc.textContent = data.processed;
           statOK.textContent = data.succeeded;
           statFail.textContent = data.failed_ids ? data.failed_ids.length : 0;
+
+          if (queueStatus) {
+            if (typeof data.queue_size === 'number') {
+              queueStatus.textContent = 'Queue size: ' + data.queue_size;
+            } else if (data.status === 'pending') {
+              queueStatus.textContent = 'Queued for processing...';
+            } else {
+              queueStatus.textContent = '';
+            }
+          }
 
           fill.style.width = pct + '%';
           pctLabel.textContent = pct + '%';

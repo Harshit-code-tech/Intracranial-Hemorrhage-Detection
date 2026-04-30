@@ -241,6 +241,11 @@ def build_report(
 
     report["llm_summary"] = generate_medical_summary(inference, calib_cfg, report)
 
+    groq_api_key = os.environ.get("GROQ_API_KEY")
+    if Groq and groq_api_key:
+        report["llm_provider"] = "groq"
+        report["llm_model"] = os.environ.get("LLM_MODEL", "llama-3.1-8b-instant")
+
     # Cloudinary Integration
     cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME")
     api_key = os.environ.get("CLOUDINARY_API_KEY")

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{% block title %}ICH Screening Dashboard{% endblock %}</title>
+    <title>{% block title %}AI Medical Intelligence Pipeline{% endblock %}</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -36,7 +36,7 @@
               <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
             </svg>
           </span>
-          <span>ICH Screening</span>
+          <span>AI Medical Intelligence Pipeline</span>
         </a>
 
         <nav class="nav-links">
@@ -47,8 +47,10 @@
                class="{% if request.endpoint == 'upload' %}active{% endif %}">New Scan</a>
             <a href="{{ url_for('reports') }}"
                class="{% if request.endpoint == 'reports' %}active{% endif %}">Past Reports</a>
+            {% if show_logs %}
             <a href="{{ url_for('logs_page') }}"
-               class="{% if request.endpoint == 'logs_page' %}active{% endif %}">Logs</a>
+              class="{% if request.endpoint == 'logs_page' %}active{% endif %}">Logs</a>
+            {% endif %}
             <a href="{{ url_for('evaluation') }}"
                class="{% if request.endpoint == 'evaluation' %}active{% endif %}">Evaluation</a>
             <a href="{{ url_for('about') }}"
@@ -89,7 +91,7 @@
     <footer class="footer">
       <div class="container footer-inner">
         <p>
-          AI-Assisted CT-Based Intracranial Hemorrhage Detection &mdash;
+          AI Medical Intelligence Pipeline for CT Scan Analysis &mdash;
           Screening Tool, Not a Diagnostic Device
         </p>
         <p class="muted small">

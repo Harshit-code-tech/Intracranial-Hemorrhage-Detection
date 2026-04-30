@@ -89,6 +89,19 @@
       </div>
     </div>
 
+    <form method="post" action="{{ url_for('update_ground_truth', image_id=row.image_id) }}" style="margin-top: 12px">
+      <label class="muted small" for="trueLabel">Update Ground Truth</label>
+      <div class="dir-input-row" style="margin-top: 6px">
+        <select name="true_label" id="trueLabel" class="input" style="max-width: 240px">
+          <option value="" {% if not row.true_label %}selected{% endif %}>Not set</option>
+          <option value="POSITIVE" {% if row.true_label == 'POSITIVE' %}selected{% endif %}>Positive</option>
+          <option value="NEGATIVE" {% if row.true_label == 'NEGATIVE' %}selected{% endif %}>Negative</option>
+          <option value="UNKNOWN" {% if row.true_label == 'UNKNOWN' %}selected{% endif %}>Unknown</option>
+        </select>
+        <button type="submit" class="btn btn-primary" style="margin-left: 8px">Save</button>
+      </div>
+    </form>
+
     <!-- Confidence bar -->
     {% if row.cal_prob is not none %}
     <div class="prob-bar-wrap">
@@ -140,6 +153,22 @@
   <p style="line-height: 1.6; font-size: 1.1rem; color: var(--text-dark, #2c3e50);">
     {{ report_record.llm_summary }}
   </p>
+</section>
+{% endif %}
+
+{% if payload and (payload.llm_provider or payload.llm_model) %}
+<section class="panel" style="margin-top: 16px">
+  <h3>LLM Information</h3>
+  <div class="kv-group" style="max-width: 500px">
+    <div class="kv">
+      <span>Provider</span>
+      <strong>{{ payload.llm_provider or 'N/A' }}</strong>
+    </div>
+    <div class="kv">
+      <span>Model</span>
+      <strong>{{ payload.llm_model or 'N/A' }}</strong>
+    </div>
+  </div>
 </section>
 {% endif %}
 

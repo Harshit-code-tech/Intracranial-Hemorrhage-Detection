@@ -25,12 +25,12 @@ import os
 import shutil
 import sys
 import tempfile
-import threading
 import time
 import uuid
 import zipfile
 import math
 from dataclasses import dataclass
+from getpass import getpass
 from pathlib import Path
 from typing import Any
 
@@ -66,9 +66,12 @@ except Exception:
     bbr = _NoopRecorder()
 
 from flask import (
-    Flask, abort, flash, g, jsonify, redirect, render_template, request,
+    Flask, Response, abort, flash, g, jsonify, redirect, render_template, request,
     send_from_directory, url_for
 )
+from types import SimpleNamespace
+from celery.result import AsyncResult
+from tasks import REDIS_URL, celery_app
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_login import current_user, login_required
@@ -121,6 +124,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 HF_MODEL_REPO = os.environ.get("ICH_HF_MODEL_REPO", "").strip()
 HF_TOKEN = os.environ.get("ICH_HF_TOKEN", "").strip()
 LOCAL_MODE = _env_bool("ICH_LOCAL_MODE", True)
+SHOW_LOGS = _env_bool("ICH_SHOW_LOGS", False)
 
 # ══════════════════════════════════════════════════════════════════════════
 #  FLASK APP SETUP
@@ -135,6 +139,10 @@ app.config.update(
     SECRET_KEY=SECRET_KEY or os.urandom(32).hex(),
     DEBUG=APP_DEBUG and os.environ.get("FLASK_ENV") == "development",
     SQLALCHEMY_DATABASE_URI=DATABASE_URL or "sqlite:///ich_app.db",
+    SQLALCHEMY_ENGINE_OPTIONS={
+        "pool_pre_ping": True,
+        "pool_recycle": 280,
+    },
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
     SESSION_COOKIE_SECURE=not APP_DEBUG,
     SESSION_COOKIE_HTTPONLY=True,
@@ -149,6 +157,16 @@ init_security(app)
 
 # Register blueprints
 app.register_blueprint(auth_bp)
+
+@app.context_processor
+def inject_feature_flags():
+    log_count = 0
+    if SHOW_LOGS and LOGS_DIR.exists():
+        try:
+            log_count = sum(1 for path in LOGS_DIR.iterdir() if path.suffix == ".json")
+        except OSError:
+            log_count = 0
+    return {"show_logs": SHOW_LOGS, "log_count": log_count}
 
 # ══════════════════════════════════════════════════════════════════════════
 #  LOGGING
@@ -193,9 +211,6 @@ _MODEL: dict[str, Any] = {
     "calib_cfg": None,
     "inference_mod": None,
 }
-
-_BATCHES: dict[str, dict[str, Any]] = {}
-_BATCHES_LOCK = threading.Lock()
 
 # ══════════════════════════════════════════════════════════════════════════
 #  MODEL LOADING
@@ -305,14 +320,18 @@ def _ensure_model_loaded() -> bool:
 #  INFERENCE & BATCH PROCESSING
 # ══════════════════════════════════════════════════════════════════════════
 
-def _run_inference_on_dcm(dcm_path: Path, user_id: int) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+def _run_inference_on_dcm(
+    dcm_path: Path,
+    user_id: int,
+    upload_id: int,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
     """Run inference on a single DICOM file"""
     if not _ensure_model_loaded():
         return None, None
     
     ri_mod = _MODEL["inference_mod"]
     image_id = dcm_path.stem
-    user_reports_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(user_id)
+    user_reports_dir = UserDataManager().get_user_reports_dir(user_id)
     
     bbr.start()
     
@@ -338,26 +357,24 @@ def _run_inference_on_dcm(dcm_path: Path, user_id: int) -> tuple[dict[str, Any] 
         pred.setdefault("calibrated_probability", inference.get("cal_prob_any"))
         pred.setdefault("decision_threshold", pred.get("decision_threshold_any"))
         report["prediction"] = pred
+
+        explainability = report.get("explainability", {}) if isinstance(report, dict) else {}
+        gradcam_reference = (
+            report.get("cloudinary_heatmap_url")
+            or explainability.get("heatmap_path")
+            or explainability.get("image_path")
+        )
         
         report_path = user_reports_dir / f"{image_id}_report.json"
         with open(report_path, "w") as f:
             json.dump(report, f, indent=2)
         
-        upload = ScreeningUpload(
-            user_id=user_id,
-            file_name=dcm_path.name,
-            original_filename=dcm_path.name,
-            file_size=dcm_path.stat().st_size if dcm_path.exists() else 0,
-            file_path=str(dcm_path.relative_to(BASE_DIR)) if dcm_path.is_relative_to(BASE_DIR) else str(dcm_path),
-            processing_status='completed'
-        )
-        db.session.add(upload)
-        db.session.flush()
-
         # Save to database
+        user_data_dir = UserDataManager().get_user_data_dir(user_id)
+
         screening_report = ScreeningReport(
             user_id=user_id,
-            upload_id=upload.id,
+            upload_id=upload_id,
             image_id=image_id,
             screening_outcome=pred.get("screening_outcome"),
             raw_probability=pred.get("raw_probability"),
@@ -366,9 +383,10 @@ def _run_inference_on_dcm(dcm_path: Path, user_id: int) -> tuple[dict[str, Any] 
             decision_threshold=pred.get("decision_threshold"),
             triage_action=report.get("triage", {}).get("action"),
             urgency=report.get("triage", {}).get("urgency"),
+            report_json_path=str(report_path.relative_to(user_data_dir)),
+            gradcam_image_path=gradcam_reference,
             llm_summary=report.get("llm_summary"),
-            report_json_path=str(report_path.relative_to(BASE_DIR)),
-            gradcam_image_path=report.get("cloudinary_heatmap_url") or str((user_reports_dir / f"{image_id}_gradcam.png").relative_to(BASE_DIR)),
+            report_payload=json.dumps(report, ensure_ascii=True),
             generated_at=datetime.datetime.utcnow(),
         )
         db.session.add(screening_report)
@@ -378,6 +396,7 @@ def _run_inference_on_dcm(dcm_path: Path, user_id: int) -> tuple[dict[str, Any] 
                  resource_id=screening_report.id, status="success")
     
     except Exception as e:
+        db.session.rollback()
         bbr.stop()
         logger.error(f"Inference failed: {e}", exc_info=True)
         log_audit("inference_failed", user_id=user_id, status="failure", details=str(e))
@@ -396,87 +415,139 @@ def _run_inference_on_dcm(dcm_path: Path, user_id: int) -> tuple[dict[str, Any] 
     
     return report, {"timestamp": ts, "image_id": image_id}
 
-def _new_batch(user_id: int, total: int, temp_dir: str | None = None) -> str:
-    """Create a batch processing job"""
-    batch_id = uuid.uuid4().hex[:12]
-    with _BATCHES_LOCK:
-        _BATCHES[batch_id] = {
-            "user_id": user_id,
-            "status": "running",
-            "total": total,
-            "processed": 0,
-            "succeeded": 0,
-            "failed_ids": [],
-            "current_file": "",
-            "image_ids": [],
-            "started_at": datetime.datetime.now().isoformat(),
-            "finished_at": None,
-            "error": None,
-            "temp_dir": temp_dir,
-        }
+def _start_batch(dcm_paths: list[Path], user_id: int, temp_dir: str | None = None) -> str:
+    """Trigger async batch processing via Celery."""
+    batch_id = f"u{user_id}_{uuid.uuid4().hex[:12]}"
+    dcm_paths_str = [str(p) for p in dcm_paths]
+    
+    # Send task to Celery worker
+    try:
+        task = celery_app.send_task(
+            "tasks.process_dicom_batch",
+            kwargs={
+                "batch_id": batch_id,
+                "dcm_paths": dcm_paths_str,
+                "user_id": user_id,
+                "temp_dir": temp_dir,
+            },
+            task_id=batch_id,
+        )
+    except Exception as exc:
+        logger.error("Failed to enqueue Celery batch task", exc_info=True)
+        raise RuntimeError("Celery enqueue failed") from exc
+    
+    logger.info(f"Started Celery batch task {batch_id} (task_id={task.id})")
     return batch_id
 
-def _batch_update(batch_id: str, **kw: Any) -> None:
-    """Update batch job status"""
-    with _BATCHES_LOCK:
-        if batch_id in _BATCHES:
-            _BATCHES[batch_id].update(kw)
 
-def _run_batch_worker(batch_id: str, dcm_paths: list[Path], user_id: int):
-    """Process multiple DICOM files in background"""
-    with app.app_context():
-        succeeded_ids = []
-        failed_ids = []
-        
-        for i, path in enumerate(dcm_paths, 1):
+def _run_batch_sync(dcm_paths: list[Path], user_id: int, temp_dir: str | None = None) -> dict[str, Any]:
+    """Fallback synchronous batch processing when Celery is unavailable."""
+    total = len(dcm_paths)
+    succeeded_ids: list[str] = []
+    failed_ids: list[str] = []
+    started_at = datetime.datetime.now().isoformat()
+    sync_batch_id = f"sync_u{user_id}_{uuid.uuid4().hex[:12]}"
+
+    log_audit(
+        "batch_sync_started",
+        user_id=user_id,
+        details=f"batch_id={sync_batch_id}, files={total}",
+        status="success",
+    )
+
+    user_upload_dir = UserDataManager().get_user_upload_dir(user_id)
+
+    try:
+        for path in dcm_paths:
             image_id = path.stem
-            _batch_update(batch_id, current_file=image_id, processed=i - 1)
-            
+
+            upload_record = ScreeningUpload(
+                user_id=user_id,
+                file_name=path.name,
+                original_filename=path.name,
+                file_size=path.stat().st_size if path.exists() else None,
+                file_path=str(path.relative_to(user_upload_dir)) if path.parent == user_upload_dir else str(path),
+                processing_status="processing",
+            )
+            db.session.add(upload_record)
+            db.session.commit()
+
             try:
-                report, _ = _run_inference_on_dcm(path, user_id)
+                report, _ = _run_inference_on_dcm(path, user_id, upload_record.id)
                 if report:
+                    upload_record.processing_status = "completed"
+                    db.session.commit()
                     succeeded_ids.append(image_id)
                 else:
+                    upload_record.processing_status = "failed"
+                    db.session.commit()
                     failed_ids.append(image_id)
-            except Exception as e:
-                logger.error(f"Batch {batch_id}: failed {image_id} — {e}")
+            except Exception as exc:
+                logger.error(f"Sync batch failed {image_id} — {exc}", exc_info=True)
+                db.session.rollback()
+                upload_record.processing_status = "failed"
+                try:
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
                 failed_ids.append(image_id)
-            
-            _batch_update(
-                batch_id,
-                processed=i,
-                succeeded=len(succeeded_ids),
-                image_ids=list(succeeded_ids),
-                failed_ids=list(failed_ids),
-            )
-        
-        # Clean up
-        with _BATCHES_LOCK:
-            b = _BATCHES.get(batch_id, {})
-            td = b.get("temp_dir")
-        if td and Path(td).exists():
-            shutil.rmtree(td, ignore_errors=True)
-        
-        _batch_update(
-            batch_id,
-            status="completed",
-            current_file="",
-            finished_at=datetime.datetime.now().isoformat(),
-        )
-        logger.info(f"Batch {batch_id} complete: {len(succeeded_ids)}/{len(dcm_paths)}, {len(failed_ids)} failed")
+    finally:
+        if temp_dir and Path(temp_dir).exists():
+            try:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                logger.info(f"Cleaned up temp_dir: {temp_dir}")
+            except Exception as exc:
+                logger.warning(f"Failed to clean temp_dir {temp_dir}: {exc}")
 
-def _start_batch(dcm_paths: list[Path], user_id: int, temp_dir: str | None = None) -> str:
-    """Start async batch processing"""
-    batch_id = _new_batch(user_id, len(dcm_paths), temp_dir)
-    t = threading.Thread(
-        target=_run_batch_worker,
-        args=(batch_id, dcm_paths, user_id),
-        daemon=True,
-        name=f"batch-{batch_id}",
+    log_audit(
+        "batch_sync_completed",
+        user_id=user_id,
+        details=(
+            f"batch_id={sync_batch_id}, processed={total}, "
+            f"succeeded={len(succeeded_ids)}, failed={len(failed_ids)}"
+        ),
+        status="success" if not failed_ids else "partial",
     )
-    t.start()
-    return batch_id
 
+    return {
+        "batch_id": sync_batch_id,
+        "user_id": user_id,
+        "status": "completed",
+        "total": total,
+        "processed": total,
+        "succeeded": len(succeeded_ids),
+        "failed_ids": list(failed_ids),
+        "image_ids": list(succeeded_ids),
+        "current_file": "",
+        "started_at": started_at,
+        "finished_at": datetime.datetime.now().isoformat(),
+        "error": None,
+        "temp_dir": temp_dir,
+    }
+
+
+def _extract_user_id_from_batch_id(batch_id: str) -> int | None:
+    """Recover the user id embedded in a batch id."""
+    if not batch_id.startswith("u"):
+        return None
+    user_part = batch_id.split("_", 1)[0][1:]
+    try:
+        return int(user_part)
+    except ValueError:
+        return None
+
+
+def _get_queue_depth() -> int | None:
+    """Best-effort queue depth for the default Celery queue."""
+    if not REDIS_URL.startswith("redis"):
+        return None
+
+    try:
+        from redis import Redis
+        client = Redis.from_url(REDIS_URL, decode_responses=True)
+        return int(client.llen("celery"))
+    except Exception:
+        return None
 # ══════════════════════════════════════════════════════════════════════════
 #  DATA MODEL & UTILITIES
 # ══════════════════════════════════════════════════════════════════════════
@@ -493,7 +564,15 @@ class CaseRow:
     urgency: str = "N/A"
     generated_at: str = ""
     report_file: str | None = None
-    gradcam_url: str | None = None
+    gradcam_file: str | None = None
+
+    @property
+    def gradcam_url(self) -> str | None:
+        if not self.gradcam_file:
+            return None
+        if self.gradcam_file.startswith("http"):
+            return self.gradcam_file
+        return self.gradcam_file
     
     @property
     def date_display(self) -> str:
@@ -517,13 +596,6 @@ def _load_user_cases(user_id: int) -> list[CaseRow]:
     
     cases = []
     for r in reports:
-        # Fallback for old records with missing gradcam_image_path
-        g_url = r.gradcam_image_path
-        if not g_url:
-            fallback_path = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(current_user.id) / f"{r.image_id}_gradcam.png"
-            if fallback_path.exists():
-                g_url = url_for('serve_gradcam', filename=fallback_path.name)
-
         cases.append(CaseRow(
             image_id=r.image_id,
             outcome=r.screening_outcome or "Unknown",
@@ -534,10 +606,49 @@ def _load_user_cases(user_id: int) -> list[CaseRow]:
             urgency=r.urgency or "N/A",
             generated_at=r.generated_at.isoformat() if r.generated_at else "",
             report_file=Path(r.report_json_path).name if r.report_json_path else None,
-            gradcam_url=g_url,
+            gradcam_file=_resolve_gradcam_reference(r),
         ))
     
     return cases
+
+
+def _resolve_gradcam_reference(report: ScreeningReport) -> str | None:
+    """Resolve the best available Grad-CAM reference for a report."""
+    if report.gradcam_image_path:
+        return str(report.gradcam_image_path)
+
+    if report.report_payload:
+        try:
+            payload = json.loads(report.report_payload)
+            explainability = payload.get("explainability", {}) if isinstance(payload, dict) else {}
+            return (
+                payload.get("cloudinary_heatmap_url")
+                or explainability.get("heatmap_path")
+                or explainability.get("image_path")
+            )
+        except json.JSONDecodeError:
+            pass
+
+    if not report.report_json_path:
+        return None
+
+    try:
+        user_data_dir = UserDataManager().get_user_data_dir(report.user_id)
+        report_path = user_data_dir / report.report_json_path
+        if not report_path.exists():
+            return None
+
+        with open(report_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+
+        explainability = payload.get("explainability", {}) if isinstance(payload, dict) else {}
+        return (
+            payload.get("cloudinary_heatmap_url")
+            or explainability.get("heatmap_path")
+            or explainability.get("image_path")
+        )
+    except (OSError, json.JSONDecodeError, TypeError, AttributeError):
+        return None
 
 def compute_stats(rows: list[CaseRow]) -> dict[str, Any]:
     """Compute statistics for dashboard"""
@@ -555,7 +666,53 @@ def compute_stats(rows: list[CaseRow]) -> dict[str, Any]:
         "urgent": urgent,
         "avg_cal_prob": avg_cal,
         "pos_rate": pos_rate,
-        "heatmaps": sum(1 for r in rows if r.gradcam_url),
+        "heatmaps": sum(1 for r in rows if r.gradcam_file),
+    }
+
+
+def _compute_ground_truth_stats(user_id: int) -> dict[str, Any]:
+    """Compute ground-truth agreement stats for a user."""
+    reports = ScreeningReport.query.filter_by(user_id=user_id).all()
+    labeled = [r for r in reports if (r.true_label or "").upper() in ("POSITIVE", "NEGATIVE")]
+    total = len(labeled)
+    if total == 0:
+        return {
+            "total": 0,
+            "tp": 0,
+            "tn": 0,
+            "fp": 0,
+            "fn": 0,
+            "accuracy": None,
+            "fp_rate": None,
+        }
+
+    def _ai_positive(report: ScreeningReport) -> bool:
+        return "no hemorrhage" not in (report.screening_outcome or "").lower()
+
+    tp = tn = fp = fn = 0
+    for r in labeled:
+        ai_pos = _ai_positive(r)
+        truth_pos = (r.true_label or "").upper() == "POSITIVE"
+        if ai_pos and truth_pos:
+            tp += 1
+        elif ai_pos and not truth_pos:
+            fp += 1
+        elif not ai_pos and truth_pos:
+            fn += 1
+        else:
+            tn += 1
+
+    accuracy = (tp + tn) / total if total else None
+    fp_rate = fp / (fp + tn) if (fp + tn) else None
+
+    return {
+        "total": total,
+        "tp": tp,
+        "tn": tn,
+        "fp": fp,
+        "fn": fn,
+        "accuracy": accuracy,
+        "fp_rate": fp_rate,
     }
 
 
@@ -658,7 +815,7 @@ def analyze():
         flash("No files were uploaded.", "error")
         return redirect(url_for("upload"))
     
-    user_upload_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_upload_dir(current_user.id)
+    user_upload_dir = UserDataManager().get_user_upload_dir(current_user.id)
     user_upload_dir.mkdir(parents=True, exist_ok=True)
     
     dcm_paths: list[Path] = []
@@ -700,12 +857,28 @@ def analyze():
     if len(dcm_paths) == 1 and temp_dir is None:
         path = dcm_paths[0]
         try:
-            report, _ = _run_inference_on_dcm(path, current_user.id)
+            user_upload_dir = UserDataManager().get_user_upload_dir(current_user.id)
+            upload_record = ScreeningUpload(
+                user_id=current_user.id,
+                file_name=path.name,
+                original_filename=path.name,
+                file_size=path.stat().st_size if path.exists() else None,
+                file_path=str(path.relative_to(user_upload_dir)) if path.parent == user_upload_dir else str(path),
+                processing_status="processing",
+            )
+            db.session.add(upload_record)
+            db.session.commit()
+
+            report, _ = _run_inference_on_dcm(path, current_user.id, upload_record.id)
             if not report:
                 flash("Model failed to load. Check server logs.", "error")
                 return redirect(url_for("upload"))
+
+            upload_record.processing_status = "completed"
+            db.session.commit()
             return redirect(url_for("case_detail", image_id=path.stem))
         except Exception as e:
+            db.session.rollback()
             logger.error(f"Analysis failed: {e}")
             log_audit("analysis_failed", user_id=current_user.id, status="failure", details=str(e))
             flash(f"Analysis failed: {e}", "error")
@@ -715,10 +888,23 @@ def analyze():
                 path.unlink()
     
     # Multiple files - async batch
-    batch_id = _start_batch(dcm_paths, current_user.id, temp_dir)
-    log_audit("batch_started", user_id=current_user.id, 
-             details=f"batch_id={batch_id}, files={len(dcm_paths)}")
-    return redirect(url_for("batch_progress", batch_id=batch_id))
+    try:
+        batch_id = _start_batch(dcm_paths, current_user.id, temp_dir)
+        log_audit(
+            "batch_started",
+            user_id=current_user.id,
+            details=f"batch_id={batch_id}, files={len(dcm_paths)}",
+        )
+        return redirect(url_for("batch_progress", batch_id=batch_id))
+    except Exception:
+        logger.error("Celery unavailable; running synchronous fallback", exc_info=True)
+        flash("Celery worker unavailable. Running batch synchronously; this may take a while.", "warning")
+        result = _run_batch_sync(dcm_paths, current_user.id, temp_dir)
+        flash(
+            f"Batch complete: {result['succeeded']}/{result['total']} succeeded.",
+            "info",
+        )
+        return redirect(url_for("reports"))
 
 
 @app.route("/analyze/directory", methods=["POST"])
@@ -728,22 +914,14 @@ def analyze_directory():
     if not LOCAL_MODE:
         abort(403)
 
-    dir_path_str = request.form.get("dir_path", "").strip().strip("'\"")
+    dir_path_str = request.form.get("dir_path", "").strip()
     if not dir_path_str:
         flash("Please enter a directory path.", "error")
         return redirect(url_for("upload"))
 
-    if len(dir_path_str) > 4096:
-        flash("Path is too long to be a valid directory.", "error")
-        return redirect(url_for("upload"))
-
-    scan_dir = Path(dir_path_str).expanduser().resolve()
-    try:
-        if not scan_dir.is_dir():
-            flash(f"Directory not found: {dir_path_str}", "error")
-            return redirect(url_for("upload"))
-    except OSError:
-        flash("Invalid directory path format.", "error")
+    scan_dir = Path(dir_path_str)
+    if not scan_dir.is_dir():
+        flash(f"Directory not found: {dir_path_str}", "error")
         return redirect(url_for("upload"))
 
     dcm_paths = sorted(scan_dir.rglob("*.dcm"))
@@ -751,32 +929,125 @@ def analyze_directory():
         flash(f"No .dcm files found in: {dir_path_str}", "error")
         return redirect(url_for("upload"))
 
-    batch_id = _start_batch(dcm_paths, current_user.id)
-    log_audit("directory_batch_started", user_id=current_user.id, details=f"batch_id={batch_id}, files={len(dcm_paths)}")
-    return redirect(url_for("batch_progress", batch_id=batch_id))
+    try:
+        batch_id = _start_batch(dcm_paths, current_user.id)
+        log_audit(
+            "directory_batch_started",
+            user_id=current_user.id,
+            details=f"batch_id={batch_id}, files={len(dcm_paths)}",
+        )
+        return redirect(url_for("batch_progress", batch_id=batch_id))
+    except Exception:
+        logger.error("Celery unavailable; running synchronous directory scan", exc_info=True)
+        flash("Celery worker unavailable. Running directory scan synchronously.", "warning")
+        result = _run_batch_sync(dcm_paths, current_user.id)
+        flash(
+            f"Directory scan complete: {result['succeeded']}/{result['total']} succeeded.",
+            "info",
+        )
+        return redirect(url_for("reports"))
 
 @app.route("/batch/<batch_id>")
 @login_required
 def batch_progress(batch_id):
     """Batch processing progress page"""
-    with _BATCHES_LOCK:
-        batch = _BATCHES.get(batch_id)
-        if not batch or batch.get("user_id") != current_user.id:
-            abort(404)
-        batch_copy = dict(batch)
+    batch = _get_batch_from_celery(batch_id)
+    if not batch or batch.get("user_id") != current_user.id:
+        abort(404)
     
-    return render_template("batch_progress.html", batch=batch_copy, batch_id=batch_id)
+    return render_template("batch_progress.html", batch=batch, batch_id=batch_id)
 
 @app.route("/batch/<batch_id>/status")
 @login_required
 def batch_status(batch_id):
     """Get batch status (JSON API)"""
-    with _BATCHES_LOCK:
-        batch = _BATCHES.get(batch_id)
-        if not batch or batch.get("user_id") != current_user.id:
-            return jsonify({"error": "Not found"}), 404
-        return jsonify(batch)
+    batch = _get_batch_from_celery(batch_id)
+    if not batch or batch.get("user_id") != current_user.id:
+        return jsonify({"error": "Not found"}), 404
+    return jsonify(batch)
 
+def _get_batch_from_celery(batch_id: str) -> dict[str, Any] | None:
+    """Retrieve batch status from Celery task result backend."""
+    # In a production system, we'd also validate user_id from the database
+    # For now, we rely on Celery returning task metadata with user_id in meta dict
+    queue_size = _get_queue_depth()
+    
+    # Try to find the task associated with this batch_id
+    # Celery doesn't provide a direct "get by batch_id" so we query the backend
+    result = AsyncResult(batch_id, app=celery_app)
+    user_id = _extract_user_id_from_batch_id(batch_id)
+    
+    if result.state == "PENDING" and not result.info:
+        # Task has been queued but has not written progress yet.
+        return {
+            "batch_id": batch_id,
+            "user_id": user_id,
+            "status": "pending",
+            "total": 0,
+            "processed": 0,
+            "succeeded": 0,
+            "failed_ids": [],
+            "image_ids": [],
+            "current_file": "",
+            "started_at": None,
+            "finished_at": None,
+            "error": None,
+            "queue_size": queue_size,
+        }
+    
+    # Build response matching _BATCHES format for frontend compatibility
+    if result.state == "PROGRESS":
+        meta = result.info or {}
+        return {
+            "batch_id": meta.get("batch_id", batch_id),
+            "user_id": meta.get("user_id", user_id),
+            "status": meta.get("status", "running"),
+            "total": meta.get("total", 0),
+            "processed": meta.get("processed", 0),
+            "succeeded": meta.get("succeeded", 0),
+            "failed_ids": meta.get("failed_ids", []),
+            "image_ids": meta.get("image_ids", []),
+            "current_file": meta.get("current_file", ""),
+            "started_at": meta.get("started_at"),
+            "finished_at": meta.get("finished_at"),
+            "error": meta.get("error"),
+            "queue_size": meta.get("queue_size", queue_size),
+        }
+    elif result.state == "SUCCESS":
+        # Task completed
+        return result.result if isinstance(result.result, dict) else {
+            "batch_id": batch_id,
+            "user_id": user_id,
+            "status": "completed",
+            "error": None,
+            "queue_size": queue_size,
+        }
+    elif result.state == "FAILURE":
+        # Task failed
+        return {
+            "batch_id": batch_id,
+            "user_id": user_id,
+            "status": "failed",
+            "error": str(result.info) if result.info else "Unknown error",
+            "queue_size": queue_size,
+        }
+    elif result.state == "REVOKED":
+        return {
+            "batch_id": batch_id,
+            "user_id": user_id,
+            "status": "revoked",
+            "error": "Task was revoked",
+            "queue_size": queue_size,
+        }
+    else:
+        # PENDING or other states
+        return {
+            "batch_id": batch_id,
+            "user_id": user_id,
+            "status": "pending",
+            "error": None,
+            "queue_size": queue_size,
+        }
 @app.route("/reports")
 @login_required
 def reports():
@@ -854,58 +1125,171 @@ def reports():
         data_cache_hit=False,
     )
 
+
+@app.route("/report/<image_id>/delete", methods=["POST"])
+@login_required
+def delete_report(image_id):
+    """Delete a single report and its associated files for the current user."""
+    report = ScreeningReport.query.filter_by(user_id=current_user.id, image_id=image_id).first()
+    if not report:
+        flash("Report not found", "error")
+        return redirect(url_for("reports"))
+
+    reports_dir = UserDataManager().get_user_reports_dir(current_user.id)
+    try:
+        for path in reports_dir.glob(f"{image_id}*"):
+            try:
+                path.unlink()
+            except OSError:
+                logger.warning(f"Failed to delete file: {path}")
+    except Exception:
+        logger.exception("Error while removing report files")
+
+    try:
+        db.session.delete(report)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("Failed to delete report DB entry")
+        flash("Failed to delete report", "error")
+        return redirect(url_for("reports"))
+
+    log_audit("report_deleted", user_id=current_user.id, resource_type="report", resource_id=report.id)
+    flash("Report deleted", "success")
+    return redirect(url_for("reports"))
+
+
+@app.route("/reports/delete_all", methods=["POST"])
+@login_required
+def delete_all_reports():
+    """Delete all reports and local files for the current user."""
+    reports = ScreeningReport.query.filter_by(user_id=current_user.id).all()
+    reports_dir = UserDataManager().get_user_reports_dir(current_user.id)
+
+    # Remove files
+    try:
+        for path in reports_dir.iterdir():
+            if path.is_file():
+                try:
+                    path.unlink()
+                except OSError:
+                    logger.warning(f"Failed to delete file: {path}")
+    except Exception:
+        logger.exception("Error while removing user report files")
+
+    # Remove DB entries
+    try:
+        for r in reports:
+            db.session.delete(r)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("Failed to delete report DB entries")
+        flash("Failed to delete all reports", "error")
+        return redirect(url_for("reports"))
+
+    log_audit("reports_deleted_all", user_id=current_user.id, resource_type="report", resource_id=None)
+    flash("All reports deleted", "success")
+    return redirect(url_for("reports"))
+
 @app.route("/case/<image_id>")
 @login_required
 def case_detail(image_id):
     """View screening report details"""
-    report_record = ScreeningReport.query.filter_by(user_id=current_user.id, image_id=image_id).first()
+    report = ScreeningReport.query.filter_by(user_id=current_user.id, image_id=image_id).first()
+    if not report:
+        abort(404)
     
-    user_reports_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(current_user.id)
     report_data = None
-    if report_record and report_record.report_json_path:
-        rp = Path(BASE_DIR) / report_record.report_json_path
-        if rp.exists():
-            with open(rp, "r") as f:
+    if report.report_payload:
+        try:
+            report_data = json.loads(report.report_payload)
+        except json.JSONDecodeError:
+            report_data = None
+
+    if report_data is None:
+        user_reports_dir = UserDataManager().get_user_reports_dir(current_user.id)
+        report_path = user_reports_dir / f"{image_id}_report.json"
+        if not report_path.exists():
+            abort(404)
+        try:
+            with open(report_path) as f:
                 report_data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            abort(500)
+    
+    log_audit("report_viewed", user_id=current_user.id, resource_type="report", resource_id=report.id)
+    # Build a lightweight `row` object matching CaseRow used elsewhere so the
+    # detail template can access properties like `row.image_id`, `row.cal_prob`.
+    def _format_date(dt):
+        try:
+            return dt.isoformat()
+        except Exception:
+            return str(dt) if dt else ""
 
-    # Use existing record details or construct a CaseRow
-    if report_record:
-        g_url = report_record.gradcam_image_path
-        if not g_url:
-            fallback_path = user_reports_dir / f"{image_id}_gradcam.png"
-            if fallback_path.exists():
-                g_url = url_for('serve_gradcam', filename=fallback_path.name)
+    gradcam_ref = _resolve_gradcam_reference(report)
+    gradcam_url = None
+    if gradcam_ref:
+        if gradcam_ref.startswith("http"):
+            gradcam_url = gradcam_ref
+        else:
+            gradcam_url = url_for("serve_gradcam", filename=Path(gradcam_ref).name)
 
-        row = CaseRow(
-            image_id=image_id,
-            outcome=report_record.screening_outcome or "Unknown",
-            raw_prob=report_record.raw_probability,
-            cal_prob=report_record.calibrated_probability,
-            band=report_record.confidence_band or "N/A",
-            triage=report_record.triage_action or "N/A",
-            urgency=report_record.urgency or "N/A",
-            generated_at=report_record.generated_at.isoformat() if report_record.generated_at else "",
-            gradcam_url=g_url
-        )
-    else:
-        # fallback
-        row = CaseRow(
-            image_id=image_id, outcome="Unknown", raw_prob=None, cal_prob=None,
-            band="N/A", triage="N/A", urgency="N/A", generated_at=""
-        )
-
-    return render_template(
-        "detail.html",
-        image_id=image_id,
-        row=row,
-        payload=report_data,
-        report_record=report_record
+    row = SimpleNamespace(
+        image_id=report.image_id,
+        outcome=report.screening_outcome or "Unknown",
+        raw_prob=report.raw_probability,
+        cal_prob=report.calibrated_probability,
+        band=report.confidence_band or "N/A",
+        triage=report.triage_action or "N/A",
+        urgency=report.urgency or "N/A",
+        generated_at=_format_date(report.generated_at),
+        date_display=(report.generated_at.strftime("%Y-%m-%d %H:%M") if report.generated_at else "—"),
+        report_file=Path(report.report_json_path).name if report.report_json_path else None,
+        gradcam_url=gradcam_url,
+        true_label=report.true_label,
+        is_positive=("no hemorrhage" not in (report.screening_outcome or "").lower()),
     )
+
+    return render_template("detail.html", row=row, report_record=report, payload=report_data)
+
+
+@app.route("/case/<image_id>/ground-truth", methods=["POST"])
+@login_required
+def update_ground_truth(image_id):
+    """Update ground truth label for a report."""
+    report = ScreeningReport.query.filter_by(user_id=current_user.id, image_id=image_id).first()
+    if not report:
+        abort(404)
+
+    raw_value = (request.form.get("true_label") or "").strip()
+    normalized = raw_value.upper().replace(" ", "_").replace("/", "_")
+    allowed = {"POSITIVE", "NEGATIVE", "UNKNOWN", "N_A"}
+    if not normalized or normalized == "N_A":
+        report.true_label = None
+    elif normalized not in allowed:
+        flash("Invalid ground truth value.", "error")
+        return redirect(url_for("case_detail", image_id=image_id))
+    else:
+        report.true_label = "UNKNOWN" if normalized == "UNKNOWN" else normalized
+
+    try:
+        db.session.commit()
+        log_audit("ground_truth_updated", user_id=current_user.id, resource_type="report", resource_id=report.id)
+        flash("Ground truth updated.", "success")
+    except Exception:
+        db.session.rollback()
+        logger.exception("Failed to update ground truth")
+        flash("Failed to update ground truth.", "error")
+
+    return redirect(url_for("case_detail", image_id=image_id))
 
 @app.route("/logs")
 @login_required
 def logs_page():
     """View user's inference logs"""
+    if not SHOW_LOGS:
+        abort(404)
     log_files = []
     
     if LOGS_DIR.exists():
@@ -928,6 +1312,7 @@ def about():
 def evaluation():
     """Model evaluation page"""
     cases = _load_user_cases(current_user.id) if current_user.is_authenticated else []
+    gt_stats = _compute_ground_truth_stats(current_user.id) if current_user.is_authenticated else None
     cal_probs = [r.cal_prob for r in cases if r.cal_prob is not None]
 
     bins = [0] * 10
@@ -952,6 +1337,7 @@ def evaluation():
         bins=bins,
         band_data=band_data,
         total=len(cases),
+        gt_stats=gt_stats,
     )
 
 
@@ -960,69 +1346,25 @@ def evaluation():
 def serve_gradcam(filename: str):
     """Serve a user's Grad-CAM image from their report directory."""
     safe_name = Path(filename).name
-    reports_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(current_user.id)
+    reports_dir = UserDataManager().get_user_reports_dir(current_user.id)
     return send_from_directory(reports_dir, safe_name)
 
-@app.route("/report/<path:filename>")
+@app.route("/report-json/<path:filename>")
 @login_required
 def serve_report_json(filename: str):
-    """Serve a user's JSON report."""
+    """Serve a user's report JSON file from their report directory."""
     safe_name = Path(filename).name
-    reports_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(current_user.id)
-    return send_from_directory(reports_dir, safe_name)
+    reports_dir = UserDataManager().get_user_reports_dir(current_user.id)
+    report_path = reports_dir / safe_name
+    if report_path.exists():
+        return send_from_directory(reports_dir, safe_name, mimetype="application/json")
 
-@app.route("/report/<image_id>/delete", methods=["POST"])
-@login_required
-def delete_report(image_id: str):
-    """Delete a single screening report and its local files."""
+    image_id = safe_name.replace("_report.json", "")
     report = ScreeningReport.query.filter_by(user_id=current_user.id, image_id=image_id).first()
-    if not report:
-        flash("Report not found.", "error")
-        return redirect(url_for("reports"))
+    if report and report.report_payload:
+        return Response(report.report_payload, mimetype="application/json")
 
-    # Delete local files
-    user_reports_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(current_user.id)
-    for suffix in ("_report.json", "_gradcam.png", "_preview.png"):
-        fp = user_reports_dir / f"{image_id}{suffix}"
-        fp.unlink(missing_ok=True)
-
-    # Delete associated upload record
-    if report.upload_id:
-        upload = db.session.get(ScreeningUpload, report.upload_id)
-        if upload:
-            db.session.delete(upload)
-        else:
-            db.session.delete(report)
-    else:
-        db.session.delete(report)
-
-    db.session.commit()
-    log_audit("report_deleted", user_id=current_user.id, resource_type="report", resource_id=image_id)
-    flash(f"Report {image_id} deleted.", "success")
-    return redirect(url_for("reports"))
-
-
-@app.route("/reports/delete-all", methods=["POST"])
-@login_required
-def delete_all_reports():
-    """Delete ALL reports for the current user quickly."""
-    import shutil
-    
-    # 1. Delete physical files securely by dropping the entire user reports folder
-    user_reports_dir = UserDataManager(UPLOAD_BASE_DIR).get_user_reports_dir(current_user.id)
-    shutil.rmtree(user_reports_dir, ignore_errors=True)
-    user_reports_dir.mkdir(parents=True, exist_ok=True)
-    
-    # 2. Bulk delete database records
-    # Because of cascade rules, deleting uploads will automatically delete reports too.
-    # But to be completely safe, we can delete reports directly as well.
-    report_count = db.session.query(ScreeningReport).filter_by(user_id=current_user.id).delete()
-    upload_count = db.session.query(ScreeningUpload).filter_by(user_id=current_user.id).delete()
-    
-    db.session.commit()
-    log_audit("all_reports_deleted", user_id=current_user.id, resource_type="report", resource_id="all")
-    flash(f"All {report_count} reports and their files have been deleted.", "success")
-    return redirect(url_for("reports"))
+    abort(404)
 
 @app.errorhandler(401)
 def unauthorized(e):
@@ -1063,8 +1405,6 @@ def init_db_cmd():
 @app.cli.command()
 def create_admin():
     """Create admin user (interactive)"""
-    from getpass import getpass
-    
     username = input("Username: ").strip()
     email = input("Email: ").strip()
     password = getpass("Password: ")

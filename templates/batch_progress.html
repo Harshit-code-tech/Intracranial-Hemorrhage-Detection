@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Batch Processing — ICH Screening{% endblock %}
+{% block title %}Batch Processing — AI Medical Intelligence Pipeline{% endblock %}
 
 {% block content %}
 <div class="batch-page" data-batch-id="{{ batch_id }}" data-status-url="{{ url_for('batch_status', batch_id=batch_id) }}" data-reports-url="{{ url_for('reports') }}">
@@ -16,6 +16,11 @@
   <h1 id="batchTitle">Processing Batch&hellip;</h1>
   <p class="muted" id="batchSubtitle">
     Analyzing {{ batch.total }} DICOM file{{ 's' if batch.total != 1 }} — please keep this page open.
+  </p>
+  <p class="muted" id="queueStatus">
+    {% if batch.queue_size is not none %}
+      Queue size: {{ batch.queue_size }}
+    {% endif %}
   </p>
 </section>
 

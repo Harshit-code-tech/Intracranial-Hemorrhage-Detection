@@ -88,6 +88,7 @@ class ScreeningReport(db.Model):
     # File paths (relative to user's data dir)
     report_json_path = db.Column(db.String(500))
     gradcam_image_path = db.Column(db.String(500))
+    report_payload = db.Column(db.Text)
     
     # Generated timestamp
     generated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)

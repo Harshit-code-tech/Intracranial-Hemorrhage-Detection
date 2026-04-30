@@ -116,83 +116,29 @@ def _validate_otp(submitted_code: str, expected_purpose: str) -> tuple[bool, str
     return True, "", payload
 
 
-def _otp_email_content(code: str, purpose: str) -> tuple[str, str]:
-    """Return (plain_text, html) for OTP emails."""
+def _otp_body(code: str, purpose: str) -> str:
     if purpose == "verify_email":
         title = "Verify your ICH Screening account"
-        body_line = (
-            "Welcome to ICH Screening. You're one step away from accessing our platform.\n"
-            "Enter the verification code below to confirm your email address and activate your account."
-        )
     else:
         title = "Your ICH Screening verification code"
-        body_line = (
-            "A verification code was requested for your ICH Screening account.\n"
-            "Enter the code below to continue. If this wasn't you, your account remains secure."
-        )
-
-    plain = (
-        f"{title}\n"
-        f"{'=' * len(title)}\n\n"
-        f"Hi there,\n\n"
-        f"{body_line}\n\n"
-        f"  Verification Code: {code}\n"
-        f"  Valid for: 10 minutes\n\n"
-        "Security reminder: ICH Screening will never ask you to share this code "
-        "over the phone, email, or chat. If anyone requests it, treat it as a phishing attempt.\n\n"
-        "Didn't sign up? Simply ignore this email — your account will remain inactive "
-        "unless this code is entered.\n"
+    return (
+        f"{title}\n\n"
+        f"Your one-time password (OTP) is: {code}\n"
+        "This code expires in 10 minutes.\n\n"
+        "If you did not request this, you can ignore this email."
     )
 
-    try:
-        from flask import render_template
-        html = render_template(
-            "email/otp_email.html",
-            title=title,
-            otp_code=code,
-            purpose=purpose,
-            recipient_name=None,
-            current_year=datetime.utcnow().year,
-        )
-    except Exception as exc:
-        logger.warning("Could not render OTP HTML email template: %s", exc)
-        html = None
 
-    return plain, html
-
-
-def _password_reset_email_content(reset_link: str) -> tuple[str, str]:
-    """Return (plain_text, html) for password-reset emails."""
-    _reset_title = "ICH Screening — Password Reset"
-    plain = (
-        f"{_reset_title}\n"
-        f"{'─' * len(_reset_title)}\n\n"
-        "Hi there,\n\n"
-        "We received a request to reset the password for your ICH Screening account.\n"
-        "Use the link below to choose a new password — it only takes a moment.\n\n"
-        f"  Reset link: {reset_link}\n\n"
-        "This link is single-use and expires in 30 minutes.\n\n"
-        "Didn't request this? You can ignore this email — your password has not been\n"
-        "changed and your account remains intact.\n"
+def _password_reset_body(reset_link: str) -> str:
+    return (
+        "Reset your ICH Screening password\n\n"
+        f"Click the link below to set a new password:\n{reset_link}\n\n"
+        "This link expires in 30 minutes.\n"
+        "If you did not request this, you can ignore this email."
     )
 
-    try:
-        from flask import render_template
-        html = render_template(
-            "email/password_reset_email.html",
-            reset_link=reset_link,
-            recipient_name=None,
-            current_year=datetime.utcnow().year,
-        )
-    except Exception as exc:
-        logger.warning("Could not render password-reset HTML email template: %s", exc)
-        html = None
 
-    return plain, html
-
-
-def _send_email(to_email: str, subject: str, body: str, html_body: str | None = None) -> bool:
-    """Send a (optionally multipart HTML + plain-text) email via SMTP."""
+def _send_email(to_email: str, subject: str, body: str) -> bool:
     smtp_host = os.environ.get("SMTP_HOST", os.environ.get("EMAIL_HOST", "")).strip()
     smtp_user = os.environ.get("SMTP_USER", os.environ.get("EMAIL_HOST_USER", "")).strip()
     smtp_pass = os.environ.get("SMTP_PASSWORD", os.environ.get("EMAIL_HOST_PASSWORD", "")).strip()
@@ -211,11 +157,7 @@ def _send_email(to_email: str, subject: str, body: str, html_body: str | None = 
     msg["Subject"] = subject
     msg["From"] = smtp_from
     msg["To"] = to_email
-    # Plain-text part (always present as fallback for non-HTML clients)
     msg.set_content(body)
-    # HTML alternative part (preferred by modern email clients when present)
-    if html_body:
-        msg.add_alternative(html_body, subtype="html")
 
     try:
         with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
@@ -301,12 +243,10 @@ def register():
             db.session.commit()
             
             otp_code = _store_otp(email=user.email, purpose="verify_email", user_id=user.id)
-            _plain, _html = _otp_email_content(otp_code, "verify_email")
             sent = _send_email(
                 user.email,
                 "Your ICH Screening verification code",
-                _plain,
-                html_body=_html,
+                _otp_body(otp_code, "verify_email"),
             )
             if _auth_email_debug_enabled():
                 logger.info("DEV OTP for %s: %s", user.email, otp_code)
@@ -356,12 +296,10 @@ def login():
         
         if not user.is_active:
             otp_code = _store_otp(email=user.email, purpose="verify_email", user_id=user.id)
-            _plain, _html = _otp_email_content(otp_code, "verify_email")
             sent = _send_email(
                 user.email,
                 "Your ICH Screening verification code",
-                _plain,
-                html_body=_html,
+                _otp_body(otp_code, "verify_email"),
             )
             if _auth_email_debug_enabled():
                 logger.info("DEV OTP resend/login for %s: %s", user.email, otp_code)
@@ -418,12 +356,10 @@ def forgot_password():
         if user:
             token = _token_serializer().dumps({"email": user.email, "purpose": "reset_password"})
             reset_link = _build_external_link('auth.reset_password', token=token)
-            _plain, _html = _password_reset_email_content(reset_link)
             sent = _send_email(
                 user.email,
                 'Reset your ICH Screening password',
-                _plain,
-                html_body=_html,
+                _password_reset_body(reset_link),
             )
             if _auth_email_debug_enabled():
                 logger.info("DEV reset link for %s: %s", user.email, reset_link)
@@ -490,8 +426,7 @@ def resend_otp():
     purpose = payload.get("purpose", "verify_email")
     user_id = payload.get("user_id")
     new_code = _store_otp(email=email, purpose=purpose, user_id=user_id)
-    _plain, _html = _otp_email_content(new_code, purpose)
-    sent = _send_email(email, "Your ICH Screening verification code", _plain, html_body=_html)
+    sent = _send_email(email, "Your ICH Screening verification code", _otp_body(new_code, purpose))
     if _auth_email_debug_enabled():
         logger.info("DEV OTP resend for %s: %s", email, new_code)
 

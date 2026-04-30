@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Evaluation — ICH Screening{% endblock %}
+{% block title %}Evaluation — AI Medical Intelligence Pipeline{% endblock %}
 
 {% block content %}
 <section class="hero">
@@ -182,4 +182,33 @@
     </div>
   </div>
 </section>
+
+{% if gt_stats %}
+<section class="panel" style="margin-top: 16px">
+  <h3>Ground Truth Agreement</h3>
+  {% if gt_stats.total == 0 %}
+  <p class="muted small">No ground truth labels available yet.</p>
+  {% else %}
+  <div class="kv-group" style="max-width: 500px">
+    <div class="kv">
+      <span>Labeled Cases</span><strong>{{ gt_stats.total }}</strong>
+    </div>
+    <div class="kv">
+      <span>Accuracy</span>
+      <strong>{{ '%.1f'|format(gt_stats.accuracy * 100) }}%</strong>
+    </div>
+    <div class="kv">
+      <span>False Positive Rate</span>
+      <strong>{{ '%.1f'|format(gt_stats.fp_rate * 100) }}%</strong>
+    </div>
+    <div class="kv">
+      <span>TP / TN</span><strong>{{ gt_stats.tp }} / {{ gt_stats.tn }}</strong>
+    </div>
+    <div class="kv">
+      <span>FP / FN</span><strong>{{ gt_stats.fp }} / {{ gt_stats.fn }}</strong>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
 {% endblock %}

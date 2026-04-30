@@ -8,6 +8,7 @@ from flask import session, redirect, url_for, request, g, abort, has_request_con
 from flask_login import LoginManager, current_user
 from models import db, User, AuditLog
 from datetime import datetime
+from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,22 @@ def init_auth(app):
 @login_manager.user_loader
 def load_user(user_id):
     """Load user from database by ID"""
-    return User.query.get(int(user_id))
+    try:
+        return User.query.get(int(user_id))
+    except SQLAlchemyError as e:
+        logger.warning(f"User loader failed, clearing session context: {e}")
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        return None
+    except Exception as e:
+        logger.warning(f"Unexpected user loader failure: {e}")
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+        return None
 
 
 def get_client_ip():

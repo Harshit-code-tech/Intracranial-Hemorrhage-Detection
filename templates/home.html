@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}ICH Screening — Dashboard{% endblock %}
+{% block title %}AI Medical Intelligence Pipeline — Dashboard{% endblock %}
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/home.css') }}"/>
@@ -14,7 +14,7 @@
     <span class="badge-dot"></span>
     AI-Powered Screening
   </div>
-  <h1>Intracranial Hemorrhage<br><span class="hero-grad">Detection System</span></h1>
+  <h1>AI Medical Intelligence<br><span class="hero-grad">Pipeline for CT Analysis</span></h1>
   <p>
     Clinical-grade CT scan analysis powered by deep learning — with Grad-CAM visualisation,
     automated triage, and exportable PDF reports.
@@ -112,6 +112,7 @@
 
 <!-- ── Mini cards ── -->
 <section class="mini-cards">
+  {% if show_logs %}
   <a href="{{ url_for('logs_page') }}" class="mini-card">
     <div class="mini-card-icon">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
@@ -120,8 +121,9 @@
       </svg>
     </div>
     <h3>Execution Logs</h3>
-    <p class="muted small">{{ log_count }} inference trace{{ 's' if log_count != 1 }} recorded</p>
+    <p class="muted small">{{ log_count | default(0) }} inference trace{{ 's' if (log_count | default(0)) != 1 }} recorded</p>
   </a>
+  {% endif %}
 
   <a href="{{ url_for('evaluation') }}" class="mini-card">
     <div class="mini-card-icon">

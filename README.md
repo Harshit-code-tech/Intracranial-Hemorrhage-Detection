@@ -1,6 +1,6 @@
-# Intracranial Hemorrhage Detection
+# AI Medical Intelligence Pipeline for CT Scan Analysis
 
-AI-assisted screening system for intracranial hemorrhage (ICH) from head CT (DICOM) images.
+AI medical intelligence pipeline for intracranial hemorrhage (ICH) analysis from head CT (DICOM) images.
 
 This project provides a Flask web interface for:
 
@@ -12,7 +12,7 @@ This project provides a Flask web interface for:
 
 ## Project Overview
 
-Intracranial hemorrhage is a time-critical emergency finding in neuroimaging. This repository focuses on a practical screening workflow with explainability and structured report output.
+Intracranial hemorrhage is a time-critical emergency finding in neuroimaging. This repository focuses on a practical intelligence pipeline with explainability and structured report output.
 
 The system is built for decision support and triage assistance, not standalone diagnosis.
 
