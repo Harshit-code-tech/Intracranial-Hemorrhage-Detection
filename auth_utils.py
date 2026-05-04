@@ -1,10 +1,9 @@
 """
 Authentication utilities and decorators for user management and security
 """
-import os
 import logging
 from functools import wraps
-from flask import session, redirect, url_for, request, g, abort, has_request_context
+from flask import session, redirect, url_for, request, has_request_context
 from flask_login import LoginManager, current_user
 from models import db, User, AuditLog, now_ist
 from sqlalchemy.exc import SQLAlchemyError

@@ -27,7 +27,7 @@
     var failPanel = document.getElementById('failPanel');
     var failList = document.getElementById('failList');
     var cancelBtn = document.getElementById('cancelBatch');
-    var prevIds = [];
+    var seenIds = new Set();
     var canceled = false;
 
     if (!statusUrl || !title || !subtitle || !fill || !pctLabel || !currentFile || !statTotal || !statProc || !statOK || !statFail || !feedPanel || !feedList || !donePanel || !doneSummary || !failPanel || !failList) {
@@ -42,7 +42,7 @@
         cancelBtn.disabled = true;
         fetch(cancelUrl, { method: 'POST' })
           .then(function (response) { return response.json(); })
-          .then(function (data) {
+          .then(function () {
             canceled = true;
             title.textContent = 'Batch Canceled';
             subtitle.textContent = 'The batch was canceled. You can start a new upload anytime.';
@@ -67,6 +67,9 @@
             return;
           }
 
+          if (data.total > 0 && expectedTotal === 0) {
+            expectedTotal = data.total;
+          }
           var total = data.total > 0 ? data.total : expectedTotal;
           var pct = total > 0 ? Math.round(data.processed / total * 100) : 0;
 
@@ -96,8 +99,8 @@
           if (data.image_ids && data.image_ids.length) {
             feedPanel.style.display = 'block';
             data.image_ids.forEach(function (imageId) {
-              if (prevIds.indexOf(imageId) === -1) {
-                prevIds.push(imageId);
+              if (!seenIds.has(imageId)) {
+                seenIds.add(imageId);
                 var li = document.createElement('li');
                 var link = document.createElement('a');
                 link.href = '/case/' + imageId;
@@ -105,7 +108,15 @@
                 li.appendChild(link);
                 feedList.insertBefore(li, feedList.firstChild);
                 while (feedList.children.length > 20) {
-                  feedList.removeChild(feedList.lastChild);
+                  var last = feedList.lastChild;
+                  if (!last) {
+                    break;
+                  }
+                  var lastLink = last.querySelector('a');
+                  if (lastLink && lastLink.textContent) {
+                    seenIds.delete(lastLink.textContent);
+                  }
+                  feedList.removeChild(last);
                 }
               }
             });
@@ -114,12 +125,18 @@
           if (data.status === 'canceled') {
             title.textContent = 'Batch Canceled';
             subtitle.textContent = 'The batch was canceled.';
+            if (cancelBtn) {
+              cancelBtn.disabled = true;
+            }
             return;
           }
 
           if (data.status === 'completed' || data.status === 'failed') {
             title.textContent = 'Batch Complete';
             subtitle.textContent = '';
+            if (cancelBtn) {
+              cancelBtn.disabled = true;
+            }
             donePanel.style.display = 'block';
             var failCount = data.failed_ids ? data.failed_ids.length : 0;
             doneSummary.textContent = data.succeeded + ' of ' + total + ' files processed successfully' + (failCount > 0 ? ', ' + failCount + ' failed' : '') + '.';

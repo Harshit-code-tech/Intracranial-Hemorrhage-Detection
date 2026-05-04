@@ -1,3 +1,18 @@
 theme: jekyll-theme-minimal
 title: Intracranial Hemorrhage Detection
 description: AI-assisted CT-based ICH screening with explainability and reporting.
+markdown: kramdown
+plugins:
+  - jekyll-remote-theme
+remote_theme: pages-themes/slate@v0.2.0
+
+# Custom CSS for theme improvements
+# Uses theSlate theme's color palette (dark gray background, light text)
+
+# Exclude files that shouldn't be in the final site
+exclude:
+  - Gemfile
+  - Gemfile.lock
+  - README.md
+  - _venv
+
