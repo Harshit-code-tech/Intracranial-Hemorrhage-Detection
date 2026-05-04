@@ -45,7 +45,7 @@ download_imp/*.pt
 download_imp/*.pkl
 download_imp/*.onnx
 
-download_imp/*
+# download_imp/*
 # Local downloaded artifacts
 download/
 # Local downloaded data

@@ -1,0 +1,17 @@
+{
+  "best_method": "isotonic",
+  "temperature": 0.7681182881076687,
+  "ece_raw": 0.029524699832706974,
+  "ece_temp": 0.008160804909196835,
+  "ece_isotonic": 6.68228018673829e-18,
+  "brier_raw": 0.05208174680122169,
+  "brier_temp": 0.0514404718775377,
+  "brier_isotonic": 0.050937655679539166,
+  "triage_high_thresh": 0.7,
+  "triage_low_thresh": 0.3,
+  "oof_auc_any": 0.9501744154042578,
+  "sensitivity_at_spec90": 0.8556471787269526,
+  "specificity_at_sens95": 0.7441809977204707,
+  "threshold_at_spec90": 0.16216216216216217,
+  "threshold_at_sens95": 0.04074505238649592
+}
