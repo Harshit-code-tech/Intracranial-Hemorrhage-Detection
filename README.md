@@ -1,3 +1,11 @@
+---
+title: ICH Detection Pipeline
+emoji: 🏥
+colorFrom: blue
+colorTo: pink
+sdk: docker
+pinned: false
+---
 # AI Medical Intelligence Pipeline for CT Scan Analysis
 
 AI medical intelligence pipeline for intracranial hemorrhage (ICH) analysis from head CT (DICOM) images.
