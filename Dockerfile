@@ -7,6 +7,12 @@ ENV PYTHONUNBUFFERED=1
 ENV PORT=7860
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Install system dependencies for OpenCV and DICOM processing
+RUN apt-get update && apt-get install -y \
+    libgl1 \
+    libglib2.0-0 \
+    libxcb1 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set work directory
 WORKDIR /app
