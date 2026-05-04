@@ -5,8 +5,13 @@ import os
 import logging
 from flask import request
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
+IST = ZoneInfo("Asia/Kolkata")
+
+def now_ist() -> datetime:
+    return datetime.now(IST).replace(tzinfo=None)
 
 
 def init_security(app):
@@ -157,7 +162,7 @@ def get_client_info() -> dict:
         'user_agent': request.headers.get('User-Agent', 'Unknown'),
         'endpoint': request.endpoint,
         'method': request.method,
-        'timestamp': datetime.utcnow().isoformat()
+        'timestamp': now_ist().isoformat()
     }
 
 
@@ -171,7 +176,7 @@ class RateLimiter:
     
     def is_rate_limited(self, key: str) -> bool:
         """Check if a key has exceeded rate limit"""
-        now = datetime.utcnow()
+        now = now_ist()
         window_start = now - timedelta(seconds=self.window_seconds)
         
         # Clean old entries
@@ -188,7 +193,7 @@ class RateLimiter:
     
     def record_request(self, key: str):
         """Record a request for rate limiting"""
-        now = datetime.utcnow()
+        now = now_ist()
         
         if key not in self.requests:
             self.requests[key] = []

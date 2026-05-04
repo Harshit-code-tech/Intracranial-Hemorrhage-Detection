@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from getpass import getpass
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 try:
     from dotenv import load_dotenv
@@ -77,7 +78,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from flask_login import current_user, login_required
 
 # Import new security and auth modules
-from models import db, User, ScreeningReport, ScreeningUpload
+from models import db, User, ScreeningReport, ScreeningUpload, AuditLog
 from auth_utils import init_auth, log_audit, get_client_ip
 from auth_routes import auth_bp
 from data_isolation import UserDataManager
@@ -125,6 +126,49 @@ HF_MODEL_REPO = os.environ.get("ICH_HF_MODEL_REPO", "").strip()
 HF_TOKEN = os.environ.get("ICH_HF_TOKEN", "").strip()
 LOCAL_MODE = _env_bool("ICH_LOCAL_MODE", True)
 SHOW_LOGS = _env_bool("ICH_SHOW_LOGS", False)
+GPU_BATCH_ENABLED = _env_bool("ICH_GPU_BATCH_INFERENCE", True)
+GPU_BATCH_SIZE = _env_int("ICH_GPU_BATCH_SIZE", 2, minimum=1)
+GPU_QUEUE_ENABLED = _env_bool("ICH_GPU_QUEUE_ENABLED", False)
+GPU_QUEUE_NAME = os.environ.get("ICH_GPU_QUEUE_NAME", "gpu").strip() or "gpu"
+CPU_QUEUE_NAME = os.environ.get("ICH_CPU_QUEUE_NAME", "cpu").strip() or "cpu"
+IST = ZoneInfo("Asia/Kolkata")
+
+def _now_ist() -> datetime.datetime:
+    return datetime.datetime.now(IST).replace(tzinfo=None)
+
+def _as_ist(dt: datetime.datetime | None) -> datetime.datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=IST)
+    return dt.astimezone(IST)
+
+def _format_dt_ist(dt: datetime.datetime | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
+    local = _as_ist(dt)
+    return local.strftime(fmt) if local else "—"
+
+def _format_iso_ist(value: str | None, fmt: str = "%Y-%m-%d %H:%M") -> str:
+    if not value:
+        return "—"
+    try:
+        parsed = datetime.datetime.fromisoformat(value)
+    except Exception:
+        return value[:16]
+    return _format_dt_ist(parsed, fmt)
+
+def _to_ist_naive(dt: datetime.datetime | None) -> datetime.datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.astimezone(IST).replace(tzinfo=None)
+
+def _cuda_available() -> bool:
+    try:
+        import torch
+        return torch.cuda.is_available()
+    except Exception:
+        return False
 
 # ══════════════════════════════════════════════════════════════════════════
 #  FLASK APP SETUP
@@ -316,6 +360,99 @@ def _ensure_model_loaded() -> bool:
         logger.error(f"Model loading failed: {e}", exc_info=True)
         return False
 
+
+def _gpu_batch_ready() -> bool:
+    if not GPU_BATCH_ENABLED:
+        return False
+    if not _ensure_model_loaded():
+        return False
+    return _MODEL.get("device") == "cuda"
+
+
+def _infer_images_batch(dcm_paths: list[Path]) -> list[tuple[Any, dict[str, Any]]]:
+    if not _ensure_model_loaded():
+        raise RuntimeError("Model not loaded")
+
+    ri_mod = _MODEL["inference_mod"]
+    images = [ri_mod.dicom_to_rgb(str(path), size=ri_mod.IMG_SIZE) for path in dcm_paths]
+    inferences = ri_mod.infer_batch(
+        images,
+        _MODEL["model"],
+        _MODEL["grad_cam"],
+        _MODEL["transform"],
+        _MODEL["device"],
+        _MODEL["temperature"],
+    )
+    return list(zip(images, inferences, strict=False))
+
+
+def _persist_inference_result(
+    image_id: str,
+    user_id: int,
+    upload_id: int,
+    img_rgb: Any,
+    inference: dict[str, Any],
+) -> dict[str, Any]:
+    ri_mod = _MODEL["inference_mod"]
+    user_reports_dir = UserDataManager().get_user_reports_dir(user_id)
+    user_reports_dir.mkdir(parents=True, exist_ok=True)
+
+    report = ri_mod.build_report(
+        image_id,
+        inference,
+        _MODEL["calib_cfg"],
+        user_reports_dir,
+        img_rgb,
+        true_label=None,
+    )
+
+    pred = report.get("prediction", {})
+    pred.setdefault("raw_probability", inference.get("raw_prob_any"))
+    pred.setdefault("calibrated_probability", inference.get("cal_prob_any"))
+    pred.setdefault("decision_threshold", pred.get("decision_threshold_any"))
+    report["prediction"] = pred
+
+    explainability = report.get("explainability", {}) if isinstance(report, dict) else {}
+    gradcam_reference = (
+        report.get("cloudinary_heatmap_url")
+        or explainability.get("heatmap_path")
+        or explainability.get("image_path")
+    )
+
+    report_path = user_reports_dir / f"{image_id}_report.json"
+    with open(report_path, "w") as f:
+        json.dump(report, f, separators=(",", ":"), ensure_ascii=True)
+
+    user_data_dir = UserDataManager().get_user_data_dir(user_id)
+    screening_report = ScreeningReport(
+        user_id=user_id,
+        upload_id=upload_id,
+        image_id=image_id,
+        screening_outcome=pred.get("screening_outcome"),
+        raw_probability=pred.get("raw_probability"),
+        calibrated_probability=pred.get("calibrated_probability"),
+        confidence_band=pred.get("confidence_band"),
+        decision_threshold=pred.get("decision_threshold"),
+        triage_action=report.get("triage", {}).get("action"),
+        urgency=report.get("triage", {}).get("urgency"),
+        report_json_path=str(report_path.relative_to(user_data_dir)),
+        gradcam_image_path=gradcam_reference,
+        llm_summary=report.get("llm_summary"),
+        report_payload=json.dumps(report, ensure_ascii=True, separators=(",", ":")),
+        generated_at=_now_ist(),
+    )
+    db.session.add(screening_report)
+    db.session.commit()
+
+    log_audit(
+        "inference_completed",
+        user_id=user_id,
+        resource_type="report",
+        resource_id=screening_report.id,
+        status="success",
+    )
+    return report
+
 # ══════════════════════════════════════════════════════════════════════════
 #  INFERENCE & BATCH PROCESSING
 # ══════════════════════════════════════════════════════════════════════════
@@ -331,7 +468,6 @@ def _run_inference_on_dcm(
     
     ri_mod = _MODEL["inference_mod"]
     image_id = dcm_path.stem
-    user_reports_dir = UserDataManager().get_user_reports_dir(user_id)
     
     bbr.start()
     
@@ -345,55 +481,7 @@ def _run_inference_on_dcm(
             _MODEL["device"],
             _MODEL["temperature"],
         )
-        
-        user_reports_dir.mkdir(parents=True, exist_ok=True)
-        report = ri_mod.build_report(
-            image_id, inference, _MODEL["calib_cfg"],
-            user_reports_dir, img_rgb, true_label=None,
-        )
-        
-        pred = report.get("prediction", {})
-        pred.setdefault("raw_probability", inference.get("raw_prob_any"))
-        pred.setdefault("calibrated_probability", inference.get("cal_prob_any"))
-        pred.setdefault("decision_threshold", pred.get("decision_threshold_any"))
-        report["prediction"] = pred
-
-        explainability = report.get("explainability", {}) if isinstance(report, dict) else {}
-        gradcam_reference = (
-            report.get("cloudinary_heatmap_url")
-            or explainability.get("heatmap_path")
-            or explainability.get("image_path")
-        )
-        
-        report_path = user_reports_dir / f"{image_id}_report.json"
-        with open(report_path, "w") as f:
-            json.dump(report, f, indent=2)
-        
-        # Save to database
-        user_data_dir = UserDataManager().get_user_data_dir(user_id)
-
-        screening_report = ScreeningReport(
-            user_id=user_id,
-            upload_id=upload_id,
-            image_id=image_id,
-            screening_outcome=pred.get("screening_outcome"),
-            raw_probability=pred.get("raw_probability"),
-            calibrated_probability=pred.get("calibrated_probability"),
-            confidence_band=pred.get("confidence_band"),
-            decision_threshold=pred.get("decision_threshold"),
-            triage_action=report.get("triage", {}).get("action"),
-            urgency=report.get("triage", {}).get("urgency"),
-            report_json_path=str(report_path.relative_to(user_data_dir)),
-            gradcam_image_path=gradcam_reference,
-            llm_summary=report.get("llm_summary"),
-            report_payload=json.dumps(report, ensure_ascii=True),
-            generated_at=datetime.datetime.utcnow(),
-        )
-        db.session.add(screening_report)
-        db.session.commit()
-        
-        log_audit("inference_completed", user_id=user_id, resource_type="report", 
-                 resource_id=screening_report.id, status="success")
+        report = _persist_inference_result(image_id, user_id, upload_id, img_rgb, inference)
     
     except Exception as e:
         db.session.rollback()
@@ -405,7 +493,7 @@ def _run_inference_on_dcm(
     bbr.stop()
     
     # Save trace
-    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = _now_ist().strftime("%Y%m%d_%H%M%S")
     base = f"{ts}_{image_id}"
     try:
         bbr.save_report(str(LOGS_DIR / f"{base}.txt"))
@@ -419,18 +507,25 @@ def _start_batch(dcm_paths: list[Path], user_id: int, temp_dir: str | None = Non
     """Trigger async batch processing via Celery."""
     batch_id = f"u{user_id}_{uuid.uuid4().hex[:12]}"
     dcm_paths_str = [str(p) for p in dcm_paths]
+    queue = None
+    if GPU_QUEUE_ENABLED:
+        queue = GPU_QUEUE_NAME if _cuda_available() else CPU_QUEUE_NAME
     
     # Send task to Celery worker
     try:
+        task_kwargs = {
+            "batch_id": batch_id,
+            "dcm_paths": dcm_paths_str,
+            "user_id": user_id,
+            "temp_dir": temp_dir,
+        }
+        send_kwargs = {"task_id": batch_id}
+        if queue:
+            send_kwargs["queue"] = queue
         task = celery_app.send_task(
             "tasks.process_dicom_batch",
-            kwargs={
-                "batch_id": batch_id,
-                "dcm_paths": dcm_paths_str,
-                "user_id": user_id,
-                "temp_dir": temp_dir,
-            },
-            task_id=batch_id,
+            kwargs=task_kwargs,
+            **send_kwargs,
         )
     except Exception as exc:
         logger.error("Failed to enqueue Celery batch task", exc_info=True)
@@ -440,13 +535,18 @@ def _start_batch(dcm_paths: list[Path], user_id: int, temp_dir: str | None = Non
     return batch_id
 
 
+def _iter_batches(items: list[Path], batch_size: int) -> list[list[Path]]:
+    return [items[i:i + batch_size] for i in range(0, len(items), batch_size)]
+
+
 def _run_batch_sync(dcm_paths: list[Path], user_id: int, temp_dir: str | None = None) -> dict[str, Any]:
     """Fallback synchronous batch processing when Celery is unavailable."""
     total = len(dcm_paths)
     succeeded_ids: list[str] = []
     failed_ids: list[str] = []
-    started_at = datetime.datetime.now().isoformat()
+    started_at = _now_ist().isoformat()
     sync_batch_id = f"sync_u{user_id}_{uuid.uuid4().hex[:12]}"
+    use_gpu_batch = _gpu_batch_ready() and total > 1
 
     log_audit(
         "batch_sync_started",
@@ -458,39 +558,106 @@ def _run_batch_sync(dcm_paths: list[Path], user_id: int, temp_dir: str | None = 
     user_upload_dir = UserDataManager().get_user_upload_dir(user_id)
 
     try:
-        for path in dcm_paths:
-            image_id = path.stem
-
-            upload_record = ScreeningUpload(
-                user_id=user_id,
-                file_name=path.name,
-                original_filename=path.name,
-                file_size=path.stat().st_size if path.exists() else None,
-                file_path=str(path.relative_to(user_upload_dir)) if path.parent == user_upload_dir else str(path),
-                processing_status="processing",
+        if use_gpu_batch:
+            logger.info(
+                "GPU batch inference enabled (size=%s); per-image traces are skipped.",
+                GPU_BATCH_SIZE,
             )
-            db.session.add(upload_record)
-            db.session.commit()
+            for chunk in _iter_batches(dcm_paths, GPU_BATCH_SIZE):
+                upload_records: list[ScreeningUpload] = []
+                for path in chunk:
+                    upload_record = ScreeningUpload(
+                        user_id=user_id,
+                        file_name=path.name,
+                        original_filename=path.name,
+                        file_size=path.stat().st_size if path.exists() else None,
+                        file_path=str(path.relative_to(user_upload_dir)) if path.parent == user_upload_dir else str(path),
+                        processing_status="processing",
+                    )
+                    db.session.add(upload_record)
+                    db.session.commit()
+                    upload_records.append(upload_record)
 
-            try:
-                report, _ = _run_inference_on_dcm(path, user_id, upload_record.id)
-                if report:
-                    upload_record.processing_status = "completed"
-                    db.session.commit()
-                    succeeded_ids.append(image_id)
-                else:
-                    upload_record.processing_status = "failed"
-                    db.session.commit()
-                    failed_ids.append(image_id)
-            except Exception as exc:
-                logger.error(f"Sync batch failed {image_id} — {exc}", exc_info=True)
-                db.session.rollback()
-                upload_record.processing_status = "failed"
                 try:
-                    db.session.commit()
-                except Exception:
+                    batch_results = _infer_images_batch(chunk)
+                except Exception as exc:
+                    logger.error("GPU batch inference failed — %s", exc, exc_info=True)
+                    for path, upload_record in zip(chunk, upload_records, strict=False):
+                        image_id = path.stem
+                        db.session.rollback()
+                        upload_record.processing_status = "failed"
+                        try:
+                            db.session.commit()
+                        except Exception:
+                            db.session.rollback()
+                        failed_ids.append(image_id)
+                    continue
+
+                for (path, upload_record), (img_rgb, inference) in zip(
+                    zip(chunk, upload_records, strict=False),
+                    batch_results,
+                    strict=False,
+                ):
+                    image_id = path.stem
+                    try:
+                        report = _persist_inference_result(
+                            image_id,
+                            user_id,
+                            upload_record.id,
+                            img_rgb,
+                            inference,
+                        )
+                        if report:
+                            upload_record.processing_status = "completed"
+                            db.session.commit()
+                            succeeded_ids.append(image_id)
+                        else:
+                            upload_record.processing_status = "failed"
+                            db.session.commit()
+                            failed_ids.append(image_id)
+                    except Exception as exc:
+                        logger.error(f"Sync batch failed {image_id} — {exc}", exc_info=True)
+                        db.session.rollback()
+                        upload_record.processing_status = "failed"
+                        try:
+                            db.session.commit()
+                        except Exception:
+                            db.session.rollback()
+                        failed_ids.append(image_id)
+        else:
+            for path in dcm_paths:
+                image_id = path.stem
+
+                upload_record = ScreeningUpload(
+                    user_id=user_id,
+                    file_name=path.name,
+                    original_filename=path.name,
+                    file_size=path.stat().st_size if path.exists() else None,
+                    file_path=str(path.relative_to(user_upload_dir)) if path.parent == user_upload_dir else str(path),
+                    processing_status="processing",
+                )
+                db.session.add(upload_record)
+                db.session.commit()
+
+                try:
+                    report, _ = _run_inference_on_dcm(path, user_id, upload_record.id)
+                    if report:
+                        upload_record.processing_status = "completed"
+                        db.session.commit()
+                        succeeded_ids.append(image_id)
+                    else:
+                        upload_record.processing_status = "failed"
+                        db.session.commit()
+                        failed_ids.append(image_id)
+                except Exception as exc:
+                    logger.error(f"Sync batch failed {image_id} — {exc}", exc_info=True)
                     db.session.rollback()
-                failed_ids.append(image_id)
+                    upload_record.processing_status = "failed"
+                    try:
+                        db.session.commit()
+                    except Exception:
+                        db.session.rollback()
+                    failed_ids.append(image_id)
     finally:
         if temp_dir and Path(temp_dir).exists():
             try:
@@ -520,7 +687,7 @@ def _run_batch_sync(dcm_paths: list[Path], user_id: int, temp_dir: str | None = 
         "image_ids": list(succeeded_ids),
         "current_file": "",
         "started_at": started_at,
-        "finished_at": datetime.datetime.now().isoformat(),
+        "finished_at": _now_ist().isoformat(),
         "error": None,
         "temp_dir": temp_dir,
     }
@@ -576,13 +743,7 @@ class CaseRow:
     
     @property
     def date_display(self) -> str:
-        if not self.generated_at:
-            return "—"
-        try:
-            dt = datetime.datetime.fromisoformat(self.generated_at)
-            return dt.strftime("%Y-%m-%d %H:%M")
-        except (ValueError, TypeError):
-            return self.generated_at[:16]
+        return _format_iso_ist(self.generated_at)
     
     @property
     def is_positive(self) -> bool:
@@ -1244,7 +1405,7 @@ def case_detail(image_id):
         triage=report.triage_action or "N/A",
         urgency=report.urgency or "N/A",
         generated_at=_format_date(report.generated_at),
-        date_display=(report.generated_at.strftime("%Y-%m-%d %H:%M") if report.generated_at else "—"),
+        date_display=_format_dt_ist(report.generated_at),
         report_file=Path(report.report_json_path).name if report.report_json_path else None,
         gradcam_url=gradcam_url,
         true_label=report.true_label,
@@ -1295,10 +1456,15 @@ def logs_page():
     if LOGS_DIR.exists():
         for path in sorted(LOGS_DIR.iterdir(), reverse=True)[:50]:  # Last 50 logs
             if path.suffix in (".txt", ".json"):
+                modified = datetime.datetime.fromtimestamp(
+                    path.stat().st_mtime,
+                    tz=datetime.timezone.utc,
+                )
+                modified_local = _as_ist(modified)
                 log_files.append({
                     "name": path.name,
                     "size": round(path.stat().st_size / 1024, 1),
-                    "modified": datetime.datetime.fromtimestamp(path.stat().st_mtime).isoformat(),
+                    "modified": modified_local.isoformat() if modified_local else "",
                 })
     
     return render_template("logs.html", logs=log_files)
@@ -1418,6 +1584,31 @@ def create_admin():
     db.session.add(user)
     db.session.commit()
     print(f"Admin user '{username}' created!")
+
+@app.cli.command()
+def migrate_utc_to_ist():
+    """Convert existing UTC timestamps to IST (run once)."""
+    with app.app_context():
+        updates = 0
+        models = {
+            User: ["created_at", "updated_at"],
+            ScreeningUpload: ["upload_timestamp"],
+            ScreeningReport: ["generated_at", "created_at"],
+            AuditLog: ["timestamp"],
+        }
+        for model, fields in models.items():
+            for row in model.query.all():
+                changed = False
+                for field in fields:
+                    value = getattr(row, field, None)
+                    updated = _to_ist_naive(value)
+                    if updated and updated != value:
+                        setattr(row, field, updated)
+                        changed = True
+                if changed:
+                    updates += 1
+        db.session.commit()
+        print(f"Migrated timestamps for {updates} rows.")
 
 # ══════════════════════════════════════════════════════════════════════════
 #  MAIN

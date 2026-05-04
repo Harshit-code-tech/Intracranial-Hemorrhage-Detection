@@ -120,11 +120,25 @@ def infer_single(
     device: str,
     temperature: float,
 ) -> dict[str, Any]:
+    return infer_batch([img_rgb], model, grad_cam, transform, device, temperature)[0]
+
+
+def infer_batch(
+    images_rgb: list[np.ndarray],
+    model,
+    grad_cam: GradCAM,
+    transform,
+    device: str,
+    temperature: float,
+) -> list[dict[str, Any]]:
     # Build 3ch tensor from the app's transform pipeline, then tile to 9ch
     # because the trained model expects 2.5D channels.
-    t3 = transform(img_rgb).unsqueeze(0).to(device)
+    if device == "cuda":
+        with torch.inference_mode():
+            t3 = torch.stack([transform(img) for img in images_rgb], dim=0).to(device)
+    else:
+        t3 = torch.stack([transform(img) for img in images_rgb], dim=0).to(device)
     t9 = torch.cat([t3, t3, t3], dim=1)
-
     if isinstance(model, list) and isinstance(grad_cam, list):
         fold_logits = []
         fold_cams = []
@@ -140,14 +154,17 @@ def infer_single(
     raw_probs = core.sigmoid_np(logits)
     cal_probs = core.sigmoid_np(logits / max(float(temperature), 1e-6))
 
-    return {
-        "raw_logits": logits,
-        "raw_probs": raw_probs,
-        "cal_probs": cal_probs,
-        "raw_prob_any": float(raw_probs[0]),
-        "cal_prob_any": float(cal_probs[0]),
-        "cam": cam,
-    }
+    results = []
+    for idx in range(len(images_rgb)):
+        results.append({
+            "raw_logits": logits[idx],
+            "raw_probs": raw_probs[idx],
+            "cal_probs": cal_probs[idx],
+            "raw_prob_any": float(raw_probs[idx][0]),
+            "cal_prob_any": float(cal_probs[idx][0]),
+            "cam": cam[idx],
+        })
+    return results
 
 
 def generate_medical_summary(inference: dict[str, Any], calib_cfg: dict[str, Any], report: dict[str, Any]) -> str:

@@ -75,6 +75,7 @@
 .error-code-wrap {
   position: relative;
   display: inline-block;
+  margin-bottom: 18px;
 }
 .error-scanline {
   position: absolute;
@@ -89,17 +90,6 @@
   10%  { opacity:1; }
   90%  { opacity:1; }
   to   { transform:translateY(80px); opacity:0; }
-}
-
-/* SVG illustration */
-.error-illustration {
-  margin: -10px 0 28px;
-  position: relative; z-index: 1;
-  animation: float-err 4s ease-in-out infinite;
-}
-@keyframes float-err {
-  0%,100%{ transform:translateY(0); }
-  50%    { transform:translateY(-10px); }
 }
 
 /* text */
@@ -137,6 +127,12 @@
   box-shadow: 0 4px 20px rgba(110,168,254,.35);
   transition: opacity .2s, transform .15s, box-shadow .2s;
   border: none; cursor: pointer;
+}
+.btn-err-primary svg,
+.btn-err-secondary svg {
+  display: block;
+  flex-shrink: 0;
+  transform: translateY(1px);
 }
 .btn-err-primary:hover {
   opacity: .9; transform: translateY(-2px);

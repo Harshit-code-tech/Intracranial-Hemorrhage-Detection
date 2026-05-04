@@ -14,6 +14,7 @@ import sys
 import traceback
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 # Ensure the app directory is in the Python path so imports work in worker processes
 APP_DIR = Path(__file__).parent.absolute()
@@ -29,6 +30,22 @@ except ImportError:
 from celery import Celery, current_task
 
 logger = logging.getLogger(__name__)
+IST = ZoneInfo("Asia/Kolkata")
+
+def _now_ist() -> datetime.datetime:
+    return datetime.datetime.now(IST).replace(tzinfo=None)
+
+def _env_int(name: str, default: int | None = None, *, minimum: int | None = None) -> int | None:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+        if minimum is not None and value < minimum:
+            return default
+        return value
+    except ValueError:
+        return default
 
 # Extract Redis URL from environment
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
@@ -53,13 +70,26 @@ celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
     result_serializer="json",
-    timezone="UTC",
-    enable_utc=True,
+    timezone="Asia/Kolkata",
+    enable_utc=False,
     task_track_started=True,
     task_time_limit=3600,  # 1 hour hard limit
     task_soft_time_limit=3300,  # 55 min soft limit
     result_expires=86400,  # 24 hours
 )
+
+extra_conf: dict[str, Any] = {}
+worker_concurrency = _env_int("ICH_CELERY_CONCURRENCY", None, minimum=1)
+worker_prefetch = _env_int("ICH_CELERY_PREFETCH_MULTIPLIER", None, minimum=1)
+if worker_concurrency is not None:
+    extra_conf["worker_concurrency"] = worker_concurrency
+if worker_prefetch is not None:
+    extra_conf["worker_prefetch_multiplier"] = worker_prefetch
+if extra_conf:
+    celery_app.conf.update(**extra_conf)
+
+def _iter_batches(items: list[str], batch_size: int) -> list[list[str]]:
+    return [items[i:i + batch_size] for i in range(0, len(items), batch_size)]
 
 
 @celery_app.task(bind=True, name="tasks.process_dicom_batch")
@@ -111,95 +141,257 @@ def process_dicom_batch(
     total = len(dcm_paths)
     succeeded_ids = []
     failed_ids = []
-    started_at = datetime.datetime.now().isoformat()
+    started_at = _now_ist().isoformat()
 
     logger.info(f"Batch {batch_id} starting: {total} files for user {user_id}")
 
     try:
         with app.app_context():
-            for i, path_str in enumerate(dcm_paths, 1):
-                # Check if task was revoked (compat across Celery versions)
-                request_ctx = current_task.request
-                is_revoked = bool(getattr(request_ctx, "is_revoked", False)) or bool(
-                    getattr(request_ctx, "revoked", False)
+            use_gpu_batch = False
+            batch_size = 1
+            _infer_images_batch = None
+            _persist_inference_result = None
+            try:
+                from app_new import (
+                    GPU_BATCH_SIZE,
+                    _gpu_batch_ready,
+                    _infer_images_batch,
+                    _persist_inference_result,
                 )
-                if is_revoked:
-                    logger.info(f"Batch {batch_id} revoked, stopping")
-                    break
+                use_gpu_batch = _gpu_batch_ready() and total > 1
+                batch_size = max(1, GPU_BATCH_SIZE)
+            except Exception:
+                use_gpu_batch = False
 
-                path = Path(path_str)
-                image_id = path.stem
-
-                upload_record = ScreeningUpload(
-                    user_id=user_id,
-                    file_name=path.name,
-                    original_filename=path.name,
-                    file_size=path.stat().st_size if path.exists() else None,
-                    file_path=str(path),
-                    processing_status="processing",
+            if use_gpu_batch and _infer_images_batch and _persist_inference_result:
+                logger.info(
+                    "GPU batch inference enabled (size=%s); per-image traces are skipped.",
+                    batch_size,
                 )
-                db.session.add(upload_record)
-                db.session.commit()
+                processed = 0
+                revoked = False
+                for chunk in _iter_batches(dcm_paths, batch_size):
+                    if revoked:
+                        break
 
-                # Update Celery task state with progress (matches _BATCHES format for frontend)
-                self.update_state(
-                    state="PROGRESS",
-                    meta={
-                        "batch_id": batch_id,
-                        "user_id": user_id,
-                        "status": "running",
-                        "total": total,
-                        "processed": i - 1,
-                        "succeeded": len(succeeded_ids),
-                        "failed_ids": list(failed_ids),
-                        "image_ids": list(succeeded_ids),
-                        "current_file": image_id,
-                        "started_at": started_at,
-                        "finished_at": None,
-                        "error": None,
-                        "temp_dir": temp_dir,
-                    },
-                )
+                    paths = [Path(p) for p in chunk]
+                    upload_records: list[ScreeningUpload] = []
+                    for path in paths:
+                        request_ctx = current_task.request
+                        is_revoked = bool(getattr(request_ctx, "is_revoked", False)) or bool(
+                            getattr(request_ctx, "revoked", False)
+                        )
+                        if is_revoked:
+                            logger.info(f"Batch {batch_id} revoked, stopping")
+                            revoked = True
+                            break
 
-                try:
-                    report, _ = _run_inference_on_dcm(path, user_id, upload_record.id)
-                    if report:
-                        upload_record.processing_status = "completed"
+                        upload_record = ScreeningUpload(
+                            user_id=user_id,
+                            file_name=path.name,
+                            original_filename=path.name,
+                            file_size=path.stat().st_size if path.exists() else None,
+                            file_path=str(path),
+                            processing_status="processing",
+                        )
+                        db.session.add(upload_record)
                         db.session.commit()
-                        succeeded_ids.append(image_id)
-                    else:
-                        upload_record.processing_status = "failed"
-                        db.session.commit()
-                        failed_ids.append(image_id)
-                except Exception as e:
-                    logger.error(f"Batch {batch_id}: failed {image_id} — {e}")
-                    db.session.rollback()
-                    upload_record.processing_status = "failed"
+                        upload_records.append(upload_record)
+
+                    if revoked:
+                        break
+
                     try:
-                        db.session.commit()
-                    except Exception:
-                        db.session.rollback()
-                    failed_ids.append(image_id)
+                        batch_results = _infer_images_batch(paths)
+                    except Exception as exc:
+                        logger.error(
+                            f"Batch {batch_id}: GPU batch inference failed — {exc}",
+                            exc_info=True,
+                        )
+                        for path, upload_record in zip(paths, upload_records, strict=False):
+                            image_id = path.stem
+                            db.session.rollback()
+                            upload_record.processing_status = "failed"
+                            try:
+                                db.session.commit()
+                            except Exception:
+                                db.session.rollback()
+                            failed_ids.append(image_id)
+                            processed += 1
+                            self.update_state(
+                                state="PROGRESS",
+                                meta={
+                                    "batch_id": batch_id,
+                                    "user_id": user_id,
+                                    "status": "running",
+                                    "total": total,
+                                    "processed": processed,
+                                    "succeeded": len(succeeded_ids),
+                                    "failed_ids": list(failed_ids),
+                                    "image_ids": list(succeeded_ids),
+                                    "current_file": "",
+                                    "started_at": started_at,
+                                    "finished_at": None,
+                                    "error": None,
+                                    "temp_dir": temp_dir,
+                                },
+                            )
+                        continue
 
-                # Update after processing each file
-                self.update_state(
-                    state="PROGRESS",
-                    meta={
-                        "batch_id": batch_id,
-                        "user_id": user_id,
-                        "status": "running",
-                        "total": total,
-                        "processed": i,
-                        "succeeded": len(succeeded_ids),
-                        "failed_ids": list(failed_ids),
-                        "image_ids": list(succeeded_ids),
-                        "current_file": "",
-                        "started_at": started_at,
-                        "finished_at": None,
-                        "error": None,
-                        "temp_dir": temp_dir,
-                    },
-                )
+                    for (path, upload_record), (img_rgb, inference) in zip(
+                        zip(paths, upload_records, strict=False),
+                        batch_results,
+                        strict=False,
+                    ):
+                        image_id = path.stem
+                        self.update_state(
+                            state="PROGRESS",
+                            meta={
+                                "batch_id": batch_id,
+                                "user_id": user_id,
+                                "status": "running",
+                                "total": total,
+                                "processed": processed,
+                                "succeeded": len(succeeded_ids),
+                                "failed_ids": list(failed_ids),
+                                "image_ids": list(succeeded_ids),
+                                "current_file": image_id,
+                                "started_at": started_at,
+                                "finished_at": None,
+                                "error": None,
+                                "temp_dir": temp_dir,
+                            },
+                        )
+
+                        try:
+                            report = _persist_inference_result(
+                                image_id,
+                                user_id,
+                                upload_record.id,
+                                img_rgb,
+                                inference,
+                            )
+                            if report:
+                                upload_record.processing_status = "completed"
+                                db.session.commit()
+                                succeeded_ids.append(image_id)
+                            else:
+                                upload_record.processing_status = "failed"
+                                db.session.commit()
+                                failed_ids.append(image_id)
+                        except Exception as exc:
+                            logger.error(f"Batch {batch_id}: failed {image_id} — {exc}")
+                            db.session.rollback()
+                            upload_record.processing_status = "failed"
+                            try:
+                                db.session.commit()
+                            except Exception:
+                                db.session.rollback()
+                            failed_ids.append(image_id)
+
+                        processed += 1
+                        self.update_state(
+                            state="PROGRESS",
+                            meta={
+                                "batch_id": batch_id,
+                                "user_id": user_id,
+                                "status": "running",
+                                "total": total,
+                                "processed": processed,
+                                "succeeded": len(succeeded_ids),
+                                "failed_ids": list(failed_ids),
+                                "image_ids": list(succeeded_ids),
+                                "current_file": "",
+                                "started_at": started_at,
+                                "finished_at": None,
+                                "error": None,
+                                "temp_dir": temp_dir,
+                            },
+                        )
+            else:
+                for i, path_str in enumerate(dcm_paths, 1):
+                    # Check if task was revoked (compat across Celery versions)
+                    request_ctx = current_task.request
+                    is_revoked = bool(getattr(request_ctx, "is_revoked", False)) or bool(
+                        getattr(request_ctx, "revoked", False)
+                    )
+                    if is_revoked:
+                        logger.info(f"Batch {batch_id} revoked, stopping")
+                        break
+
+                    path = Path(path_str)
+                    image_id = path.stem
+
+                    upload_record = ScreeningUpload(
+                        user_id=user_id,
+                        file_name=path.name,
+                        original_filename=path.name,
+                        file_size=path.stat().st_size if path.exists() else None,
+                        file_path=str(path),
+                        processing_status="processing",
+                    )
+                    db.session.add(upload_record)
+                    db.session.commit()
+
+                    # Update Celery task state with progress (matches _BATCHES format for frontend)
+                    self.update_state(
+                        state="PROGRESS",
+                        meta={
+                            "batch_id": batch_id,
+                            "user_id": user_id,
+                            "status": "running",
+                            "total": total,
+                            "processed": i - 1,
+                            "succeeded": len(succeeded_ids),
+                            "failed_ids": list(failed_ids),
+                            "image_ids": list(succeeded_ids),
+                            "current_file": image_id,
+                            "started_at": started_at,
+                            "finished_at": None,
+                            "error": None,
+                            "temp_dir": temp_dir,
+                        },
+                    )
+
+                    try:
+                        report, _ = _run_inference_on_dcm(path, user_id, upload_record.id)
+                        if report:
+                            upload_record.processing_status = "completed"
+                            db.session.commit()
+                            succeeded_ids.append(image_id)
+                        else:
+                            upload_record.processing_status = "failed"
+                            db.session.commit()
+                            failed_ids.append(image_id)
+                    except Exception as e:
+                        logger.error(f"Batch {batch_id}: failed {image_id} — {e}")
+                        db.session.rollback()
+                        upload_record.processing_status = "failed"
+                        try:
+                            db.session.commit()
+                        except Exception:
+                            db.session.rollback()
+                        failed_ids.append(image_id)
+
+                    # Update after processing each file
+                    self.update_state(
+                        state="PROGRESS",
+                        meta={
+                            "batch_id": batch_id,
+                            "user_id": user_id,
+                            "status": "running",
+                            "total": total,
+                            "processed": i,
+                            "succeeded": len(succeeded_ids),
+                            "failed_ids": list(failed_ids),
+                            "image_ids": list(succeeded_ids),
+                            "current_file": "",
+                            "started_at": started_at,
+                            "finished_at": None,
+                            "error": None,
+                            "temp_dir": temp_dir,
+                        },
+                    )
 
         # Cleanup temporary directory if provided
         if temp_dir and Path(temp_dir).exists():
@@ -231,7 +423,7 @@ def process_dicom_batch(
             "image_ids": list(succeeded_ids),
             "current_file": "",
             "started_at": started_at,
-            "finished_at": datetime.datetime.now().isoformat(),
+            "finished_at": _now_ist().isoformat(),
             "error": None,
             "temp_dir": temp_dir,
         }

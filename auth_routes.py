@@ -24,7 +24,7 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import func, or_
 
 from auth_utils import log_audit, validate_email, validate_password, validate_username
-from models import User, db
+from models import User, db, now_ist
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
@@ -57,7 +57,7 @@ def _otp_payload_from_session() -> dict:
 
 def _store_otp(email: str, purpose: str, user_id: int | None = None) -> str:
     code = _generate_otp()
-    expires_at = datetime.utcnow() + timedelta(minutes=10)
+    expires_at = now_ist() + timedelta(minutes=10)
     session[OTP_SESSION_KEY] = {
         "email": email,
         "purpose": purpose,
@@ -98,7 +98,7 @@ def _validate_otp(submitted_code: str, expected_purpose: str) -> tuple[bool, str
         _clear_otp()
         return False, "OTP is invalid. Please request a new code.", None
 
-    if datetime.utcnow() > expires_at:
+    if now_ist() > expires_at:
         _clear_otp()
         return False, "OTP expired. Please request a new code.", None
 

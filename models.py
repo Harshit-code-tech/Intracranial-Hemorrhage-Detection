@@ -3,12 +3,17 @@ Database models for ICH Screening Application with user authentication and priva
 """
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 import secrets
 
 db = SQLAlchemy()
+IST = ZoneInfo("Asia/Kolkata")
+
+def now_ist() -> datetime:
+    return datetime.now(IST).replace(tzinfo=None)
 
 
 class User(UserMixin, db.Model):
@@ -20,8 +25,8 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(120), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     full_name = db.Column(db.String(120))
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=now_ist, nullable=False)
+    updated_at = db.Column(db.DateTime, default=now_ist, onupdate=now_ist)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     
     # Relationships
@@ -50,7 +55,7 @@ class ScreeningUpload(db.Model):
     original_filename = db.Column(db.String(255), nullable=False)
     file_size = db.Column(db.Integer)  # bytes
     file_path = db.Column(db.String(500), nullable=False)  # Relative to user's upload dir
-    upload_timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    upload_timestamp = db.Column(db.DateTime, default=now_ist, nullable=False, index=True)
     processing_status = db.Column(db.String(20), default='pending')  # pending, processing, completed, failed
     processing_error = db.Column(db.Text)  # Error message if failed
     
@@ -91,8 +96,8 @@ class ScreeningReport(db.Model):
     report_payload = db.Column(db.Text)
     
     # Generated timestamp
-    generated_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    generated_at = db.Column(db.DateTime, default=now_ist, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=now_ist, nullable=False)
     
     def __repr__(self):
         return f'<ScreeningReport {self.id} - user {self.user_id} - {self.image_id}>'
@@ -109,7 +114,7 @@ class AuditLog(db.Model):
     resource_id = db.Column(db.String(255))
     details = db.Column(db.Text)  # JSON or plain text with additional info
     ip_address = db.Column(db.String(45))  # IPv4 or IPv6
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False, index=True)
+    timestamp = db.Column(db.DateTime, default=now_ist, nullable=False, index=True)
     status = db.Column(db.String(20), default='success')  # success, failure
     
     def __repr__(self):

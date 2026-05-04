@@ -6,8 +6,7 @@ import logging
 from functools import wraps
 from flask import session, redirect, url_for, request, g, abort, has_request_context
 from flask_login import LoginManager, current_user
-from models import db, User, AuditLog
-from datetime import datetime
+from models import db, User, AuditLog, now_ist
 from sqlalchemy.exc import SQLAlchemyError
 
 logger = logging.getLogger(__name__)
@@ -64,7 +63,7 @@ def log_audit(action, user_id=None, resource_type=None, resource_id=None,
             resource_id=resource_id,
             details=details,
             ip_address=get_client_ip(),
-            timestamp=datetime.utcnow(),
+            timestamp=now_ist(),
             status=status
         )
         db.session.add(audit_entry)
