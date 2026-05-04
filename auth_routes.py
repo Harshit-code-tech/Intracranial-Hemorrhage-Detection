@@ -92,6 +92,9 @@ def _validate_otp(submitted_code: str, expected_purpose: str) -> tuple[bool, str
         return False, "OTP purpose mismatch. Please request a new code.", None
 
     expires_raw = payload.get("expires_at")
+    if not expires_raw:
+        _clear_otp()
+        return False, "OTP is invalid. Please request a new code.", None
     try:
         expires_at = datetime.fromisoformat(expires_raw)
     except Exception:

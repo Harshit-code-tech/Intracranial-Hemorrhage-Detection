@@ -963,6 +963,11 @@
 .batch-header {
   margin-bottom: 20px;
 }
+.batch-header-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+}
 .batch-header h1 {
   font-size: 1.6rem;
   font-weight: 800;

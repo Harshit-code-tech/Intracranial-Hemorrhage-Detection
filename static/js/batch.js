@@ -7,6 +7,8 @@
 
     var statusUrl = page.dataset.statusUrl;
     var pollMs = 1000;
+    var expectedTotal = parseInt(page.dataset.expectedTotal || '0', 10) || 0;
+    var cancelUrl = page.dataset.cancelUrl;
 
     var title = document.getElementById('batchTitle');
     var subtitle = document.getElementById('batchSubtitle');
@@ -24,10 +26,35 @@
     var doneSummary = document.getElementById('doneSummary');
     var failPanel = document.getElementById('failPanel');
     var failList = document.getElementById('failList');
+    var cancelBtn = document.getElementById('cancelBatch');
     var prevIds = [];
+    var canceled = false;
 
     if (!statusUrl || !title || !subtitle || !fill || !pctLabel || !currentFile || !statTotal || !statProc || !statOK || !statFail || !feedPanel || !feedList || !donePanel || !doneSummary || !failPanel || !failList) {
       return;
+    }
+
+    if (cancelBtn && cancelUrl) {
+      cancelBtn.addEventListener('click', function () {
+        if (!confirm('Cancel this batch? Any in-progress file may not complete.')) {
+          return;
+        }
+        cancelBtn.disabled = true;
+        fetch(cancelUrl, { method: 'POST' })
+          .then(function (response) { return response.json(); })
+          .then(function (data) {
+            canceled = true;
+            title.textContent = 'Batch Canceled';
+            subtitle.textContent = 'The batch was canceled. You can start a new upload anytime.';
+            currentFile.textContent = '';
+            if (queueStatus) {
+              queueStatus.textContent = '';
+            }
+          })
+          .catch(function () {
+            cancelBtn.disabled = false;
+          });
+      });
     }
 
     function poll() {
@@ -36,9 +63,14 @@
           return response.json();
         })
         .then(function (data) {
-          var pct = data.total > 0 ? Math.round(data.processed / data.total * 100) : 0;
+          if (canceled) {
+            return;
+          }
 
-          statTotal.textContent = data.total;
+          var total = data.total > 0 ? data.total : expectedTotal;
+          var pct = total > 0 ? Math.round(data.processed / total * 100) : 0;
+
+          statTotal.textContent = total;
           statProc.textContent = data.processed;
           statOK.textContent = data.succeeded;
           statFail.textContent = data.failed_ids ? data.failed_ids.length : 0;
@@ -51,6 +83,10 @@
             } else {
               queueStatus.textContent = '';
             }
+          }
+
+          if (data.status === 'pending' && expectedTotal > 0) {
+            subtitle.textContent = 'Queued - waiting for a worker. Total files: ' + expectedTotal + '.';
           }
 
           fill.style.width = pct + '%';
@@ -75,12 +111,18 @@
             });
           }
 
+          if (data.status === 'canceled') {
+            title.textContent = 'Batch Canceled';
+            subtitle.textContent = 'The batch was canceled.';
+            return;
+          }
+
           if (data.status === 'completed' || data.status === 'failed') {
             title.textContent = 'Batch Complete';
             subtitle.textContent = '';
             donePanel.style.display = 'block';
             var failCount = data.failed_ids ? data.failed_ids.length : 0;
-            doneSummary.textContent = data.succeeded + ' of ' + data.total + ' files processed successfully' + (failCount > 0 ? ', ' + failCount + ' failed' : '') + '.';
+            doneSummary.textContent = data.succeeded + ' of ' + total + ' files processed successfully' + (failCount > 0 ? ', ' + failCount + ' failed' : '') + '.';
 
             if (data.failed_ids && data.failed_ids.length) {
               failPanel.style.display = 'block';

@@ -3,7 +3,13 @@
 {% block title %}Batch Processing — AI Medical Intelligence Pipeline{% endblock %}
 
 {% block content %}
-<div class="batch-page" data-batch-id="{{ batch_id }}" data-status-url="{{ url_for('batch_status', batch_id=batch_id) }}" data-reports-url="{{ url_for('reports') }}">
+{% set display_total = batch.total if batch.total else (expected_total or 0) %}
+<div class="batch-page"
+  data-batch-id="{{ batch_id }}"
+  data-status-url="{{ url_for('batch_status', batch_id=batch_id) }}"
+  data-cancel-url="{{ url_for('cancel_batch', batch_id=batch_id) }}"
+  data-reports-url="{{ url_for('reports') }}"
+  data-expected-total="{{ display_total }}">
 <section class="breadcrumb">
   <a href="{{ url_for('home') }}">Home</a>
   <span class="sep">/</span>
@@ -15,13 +21,16 @@
 <section class="batch-header">
   <h1 id="batchTitle">Processing Batch&hellip;</h1>
   <p class="muted" id="batchSubtitle">
-    Analyzing {{ batch.total }} DICOM file{{ 's' if batch.total != 1 }} — please keep this page open.
+    Analyzing {{ display_total }} DICOM file{{ 's' if display_total != 1 }} — please keep this page open.
   </p>
   <p class="muted" id="queueStatus">
     {% if batch.queue_size is not none %}
       Queue size: {{ batch.queue_size }}
     {% endif %}
   </p>
+  <div class="batch-header-actions">
+    <button type="button" class="btn btn-outline" id="cancelBatch">Cancel Batch</button>
+  </div>
 </section>
 
 <!-- ── Progress bar ────────────────────────────────────────────────── -->
@@ -29,7 +38,7 @@
   <div class="batch-stats-row">
     <div class="batch-stat">
       <span class="batch-stat-label">Total</span>
-      <span class="batch-stat-value" id="statTotal">{{ batch.total }}</span>
+      <span class="batch-stat-value" id="statTotal">{{ display_total }}</span>
     </div>
     <div class="batch-stat">
       <span class="batch-stat-label">Processed</span>

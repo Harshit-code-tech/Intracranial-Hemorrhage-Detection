@@ -1056,7 +1056,7 @@ def analyze():
             user_id=current_user.id,
             details=f"batch_id={batch_id}, files={len(dcm_paths)}",
         )
-        return redirect(url_for("batch_progress", batch_id=batch_id))
+        return redirect(url_for("batch_progress", batch_id=batch_id, total=len(dcm_paths)))
     except Exception:
         logger.error("Celery unavailable; running synchronous fallback", exc_info=True)
         flash("Celery worker unavailable. Running batch synchronously; this may take a while.", "warning")
@@ -1097,7 +1097,7 @@ def analyze_directory():
             user_id=current_user.id,
             details=f"batch_id={batch_id}, files={len(dcm_paths)}",
         )
-        return redirect(url_for("batch_progress", batch_id=batch_id))
+        return redirect(url_for("batch_progress", batch_id=batch_id, total=len(dcm_paths)))
     except Exception:
         logger.error("Celery unavailable; running synchronous directory scan", exc_info=True)
         flash("Celery worker unavailable. Running directory scan synchronously.", "warning")
@@ -1115,8 +1115,15 @@ def batch_progress(batch_id):
     batch = _get_batch_from_celery(batch_id)
     if not batch or batch.get("user_id") != current_user.id:
         abort(404)
-    
-    return render_template("batch_progress.html", batch=batch, batch_id=batch_id)
+    expected_total = request.args.get("total", type=int)
+    if expected_total and (batch.get("total") or 0) == 0:
+        batch["total"] = expected_total
+    return render_template(
+        "batch_progress.html",
+        batch=batch,
+        batch_id=batch_id,
+        expected_total=expected_total or 0,
+    )
 
 @app.route("/batch/<batch_id>/status")
 @login_required
@@ -1126,6 +1133,26 @@ def batch_status(batch_id):
     if not batch or batch.get("user_id") != current_user.id:
         return jsonify({"error": "Not found"}), 404
     return jsonify(batch)
+
+@app.route("/batch/<batch_id>/cancel", methods=["POST"])
+@login_required
+def cancel_batch(batch_id):
+    """Cancel a running batch task."""
+    user_id = _extract_user_id_from_batch_id(batch_id)
+    if user_id != current_user.id:
+        abort(404)
+    try:
+        celery_app.control.revoke(batch_id, terminate=True, signal="SIGTERM")
+        log_audit(
+            "batch_canceled",
+            user_id=current_user.id,
+            details=f"batch_id={batch_id}",
+            status="success",
+        )
+        return jsonify({"status": "canceled"})
+    except Exception as exc:
+        logger.error("Failed to cancel batch %s: %s", batch_id, exc, exc_info=True)
+        return jsonify({"error": "Cancel failed"}), 500
 
 def _get_batch_from_celery(batch_id: str) -> dict[str, Any] | None:
     """Retrieve batch status from Celery task result backend."""
@@ -1144,6 +1171,22 @@ def _get_batch_from_celery(batch_id: str) -> dict[str, Any] | None:
             "batch_id": batch_id,
             "user_id": user_id,
             "status": "pending",
+            "total": 0,
+            "processed": 0,
+            "succeeded": 0,
+            "failed_ids": [],
+            "image_ids": [],
+            "current_file": "",
+            "started_at": None,
+            "finished_at": None,
+            "error": None,
+            "queue_size": queue_size,
+        }
+    elif result.state == "REVOKED":
+        return {
+            "batch_id": batch_id,
+            "user_id": user_id,
+            "status": "canceled",
             "total": 0,
             "processed": 0,
             "succeeded": 0,
