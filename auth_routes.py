@@ -672,9 +672,13 @@ def delete_account():
             except Exception as exc:
                 logger.warning("Failed to delete avatar during account deletion: %s", exc)
 
+        # Fix foreign key violation: Nullify user_id in audit_logs before deleting user
+        from models import AuditLog
+        AuditLog.query.filter_by(user_id=user_id).update({'user_id': None})
+
         db.session.delete(current_user)
         db.session.commit()
-        log_audit('account_deleted', user_id=user_id, status='success')
+        log_audit('account_deleted', user_id=None, status='success', details=f"User {user_id} deleted")
         logout_user()
         flash('Your account has been successfully deleted.', 'success')
         return redirect(url_for('home'))
