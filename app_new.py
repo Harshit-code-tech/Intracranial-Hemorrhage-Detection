@@ -227,10 +227,25 @@ logger = logging.getLogger("ich_app")
 # ══════════════════════════════════════════════════════════════════════════
 
 def init_db():
-    """Initialize database tables"""
+    """Initialize database tables and run lightweight column migrations."""
     with app.app_context():
         db.create_all()
-        logger.info("Database initialized")
+        # Safe column additions for existing deployments.
+        # IF NOT EXISTS is supported by PostgreSQL 9.6+ and is a no-op if the column already exists.
+        migrations = [
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500)",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_public_id VARCHAR(255)",
+            # pending_otps is created by create_all() on first deploy; no ALTER needed.
+        ]
+        with db.engine.connect() as conn:
+            for sql in migrations:
+                try:
+                    conn.execute(db.text(sql))
+                except Exception as exc:
+                    logger.warning("Migration skipped (%s): %s", sql, exc)
+            conn.commit()
+        logger.info("Database initialized and migrations applied")
+
 
 # ══════════════════════════════════════════════════════════════════════════
 #  MODEL & INFERENCE STATE
