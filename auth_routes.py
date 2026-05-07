@@ -24,12 +24,10 @@ from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import func, or_
 
 from auth_utils import log_audit, validate_email, validate_password, validate_username
-from models import User, db, now_ist
+from models import PendingOtp, User, db, now_ist
 
 logger = logging.getLogger(__name__)
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
-
-OTP_SESSION_KEY = "pending_otp"
 
 
 def _parse_bool(raw: str | None, default: bool = False) -> bool:
@@ -50,73 +48,64 @@ def _generate_otp() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
-def _otp_payload_from_session() -> dict:
-    payload = session.get(OTP_SESSION_KEY)
-    return payload if isinstance(payload, dict) else {}
+# ── DB-based OTP helpers (session-cookie-free) ────────────────────────────────
+
+def _store_otp(email: str, purpose: str, user_id: int | None = None,
+               pending_value: str | None = None) -> tuple[str, str]:
+    """Generate a new OTP, persist it in the DB, return (code, token)."""
+    # Delete any existing pending OTPs for this email+purpose to keep the table clean
+    PendingOtp.query.filter_by(email=email, purpose=purpose).delete()
+    code  = _generate_otp()
+    token = secrets.token_urlsafe(32)
+    row   = PendingOtp(
+        token         = token,
+        email         = email,
+        purpose       = purpose,
+        otp_hash      = _hash_otp(code),
+        expires_at    = now_ist() + timedelta(minutes=10),
+        attempts      = 0,
+        user_id       = user_id,
+        pending_value = pending_value,
+    )
+    db.session.add(row)
+    db.session.commit()
+    return code, token
 
 
-def _store_otp(email: str, purpose: str, user_id: int | None = None) -> str:
-    code = _generate_otp()
-    expires_at = now_ist() + timedelta(minutes=10)
-    session[OTP_SESSION_KEY] = {
-        "email": email,
-        "purpose": purpose,
-        "user_id": user_id,
-        "otp_hash": _hash_otp(code),
-        "expires_at": expires_at.isoformat(),
-        "attempts": 0,
-    }
-    session.modified = True
-    return code
+def _otp_row_from_token(token: str | None) -> PendingOtp | None:
+    """Look up a PendingOtp row by its opaque token."""
+    if not token:
+        return None
+    return PendingOtp.query.filter_by(token=token).first()
 
 
-def _clear_otp() -> None:
-    session.pop(OTP_SESSION_KEY, None)
-    session.modified = True
-
-
-def _extract_otp_from_form() -> str:
-    direct = request.form.get("otp", "").strip()
-    if direct:
-        return direct
-    digits = [request.form.get(f"d{i}", "").strip() for i in range(1, 7)]
-    return "".join(digits)
-
-
-def _validate_otp(submitted_code: str, expected_purpose: str) -> tuple[bool, str, dict | None]:
-    payload = _otp_payload_from_session()
-    if not payload:
+def _validate_otp(submitted_code: str, expected_purpose: str,
+                  token: str | None) -> tuple[bool, str, PendingOtp | None]:
+    """Validate a submitted OTP code. Returns (ok, message, row)."""
+    row = _otp_row_from_token(token)
+    if not row:
         return False, "OTP session is missing or expired. Please request a new code.", None
-
-    if payload.get("purpose") != expected_purpose:
+    if row.purpose != expected_purpose:
         return False, "OTP purpose mismatch. Please request a new code.", None
-
-    expires_raw = payload.get("expires_at")
-    if not expires_raw:
-        _clear_otp()
-        return False, "OTP is invalid. Please request a new code.", None
-    try:
-        expires_at = datetime.fromisoformat(expires_raw)
-    except Exception:
-        _clear_otp()
-        return False, "OTP is invalid. Please request a new code.", None
-
-    if now_ist() > expires_at:
-        _clear_otp()
+    if row.is_expired():
+        db.session.delete(row)
+        db.session.commit()
         return False, "OTP expired. Please request a new code.", None
-
-    attempts = int(payload.get("attempts", 0))
-    if attempts >= 5:
-        _clear_otp()
+    if row.attempts >= 5:
+        db.session.delete(row)
+        db.session.commit()
         return False, "Too many failed attempts. Please request a new code.", None
+    if _hash_otp(submitted_code) != row.otp_hash:
+        row.attempts += 1
+        db.session.commit()
+        remaining = 5 - row.attempts
+        return False, f"Invalid OTP code. {remaining} attempt(s) remaining.", None
+    return True, "", row
 
-    if _hash_otp(submitted_code) != payload.get("otp_hash"):
-        payload["attempts"] = attempts + 1
-        session[OTP_SESSION_KEY] = payload
-        session.modified = True
-        return False, "Invalid OTP code.", None
 
-    return True, "", payload
+def _clear_otp_row(row: PendingOtp) -> None:
+    db.session.delete(row)
+    db.session.commit()
 
 
 def _otp_body(code: str, purpose: str) -> str:
@@ -245,7 +234,7 @@ def register():
             db.session.add(user)
             db.session.commit()
             
-            otp_code = _store_otp(email=user.email, purpose="verify_email", user_id=user.id)
+            otp_code, otp_token = _store_otp(email=user.email, purpose="verify_email", user_id=user.id)
             sent = _send_email(
                 user.email,
                 "Your ICH Screening verification code",
@@ -255,12 +244,9 @@ def register():
                 logger.info("DEV OTP for %s: %s", user.email, otp_code)
 
             log_audit('user_registered', user_id=user.id, status='success')
-            if sent:
-                flash('Registration successful. We sent a verification code to your email.', 'success')
-            else:
-                flash('Registration successful, but email delivery failed. Configure SMTP and resend OTP.', 'warning')
-
-            return redirect(url_for('auth.verify_otp', purpose='verify_email', email=user.email))
+            notice = 'otp_sent' if sent else 'otp_email_failed'
+            return redirect(url_for('auth.verify_otp', purpose='verify_email',
+                                    email=user.email, otp_token=otp_token, notice=notice))
         
         except Exception as e:
             db.session.rollback()
@@ -298,7 +284,7 @@ def login():
             return render_template('auth/login.html'), 401
         
         if not user.is_active:
-            otp_code = _store_otp(email=user.email, purpose="verify_email", user_id=user.id)
+            otp_code, otp_token = _store_otp(email=user.email, purpose="verify_email", user_id=user.id)
             sent = _send_email(
                 user.email,
                 "Your ICH Screening verification code",
@@ -307,11 +293,9 @@ def login():
             if _auth_email_debug_enabled():
                 logger.info("DEV OTP resend/login for %s: %s", user.email, otp_code)
             log_audit('login_failed', user_id=user.id, status='failure', details='Email not verified')
-            if sent:
-                flash('Please verify your email. A fresh OTP code was sent.', 'info')
-            else:
-                flash('Please verify your email. OTP generation worked but SMTP is not configured.', 'warning')
-            return redirect(url_for('auth.verify_otp', purpose='verify_email', email=user.email))
+            notice = 'otp_resent' if sent else 'otp_email_failed'
+            return redirect(url_for('auth.verify_otp', purpose='verify_email',
+                                    email=user.email, otp_token=otp_token, notice=notice))
         
         if not user.check_password(password):
             logger.warning("Failed login attempt for identifier: %s", identifier)
@@ -384,60 +368,67 @@ def forgot_password():
 
 @auth_bp.route('/verify-otp', methods=['GET', 'POST'])
 def verify_otp():
-    """Verify one-time password for account email verification."""
-    purpose = request.args.get('purpose', 'verify_email')
-    payload = _otp_payload_from_session()
-    email = payload.get('email') or request.args.get('email', '')
+    """Verify one-time password — uses DB row via otp_token URL param (cookie-free)."""
+    purpose    = request.args.get('purpose', 'verify_email')
+    otp_token  = request.args.get('otp_token') or request.form.get('otp_token', '')
+    email      = request.args.get('email', '')
+    notice     = request.args.get('notice', '')
 
     if request.method == 'POST':
-        submitted = _extract_otp_from_form()
+        # Reconstruct digits → 6-char string
+        direct = request.form.get('otp', '').strip()
+        if not direct:
+            direct = ''.join(request.form.get(f'd{i}', '').strip() for i in range(1, 7))
+        submitted = direct
+
         if len(submitted) != 6 or not submitted.isdigit():
-            flash('Please enter the 6-digit OTP code.', 'error')
-            return render_template('auth/verify_otp.html', email=email, purpose=purpose), 400
+            return redirect(url_for('auth.verify_otp', purpose=purpose, email=email,
+                                    otp_token=otp_token, notice='invalid_digits'))
 
-        ok, msg, verified_payload = _validate_otp(submitted, purpose)
+        ok, msg, row = _validate_otp(submitted, purpose, otp_token)
         if not ok:
-            flash(msg, 'error')
-            return render_template('auth/verify_otp.html', email=email, purpose=purpose), 400
+            logger.warning("OTP validation failed for %s: %s", email, msg)
+            return redirect(url_for('auth.verify_otp', purpose=purpose, email=email,
+                                    otp_token=otp_token, notice='invalid_code'))
 
-        user_id = verified_payload.get("user_id") if verified_payload else None
-        user = User.query.get(int(user_id)) if user_id else None
+        user = User.query.get(int(row.user_id)) if row.user_id else None
         if not user:
-            _clear_otp()
-            flash('Verification session is invalid. Please register again.', 'error')
-            return redirect(url_for('auth.register'))
+            _clear_otp_row(row)
+            return redirect(url_for('auth.register') + '?notice=session_invalid')
 
         user.is_active = True
-        db.session.commit()
-        _clear_otp()
+        _clear_otp_row(row)
         log_audit('email_verified', user_id=user.id, status='success')
         flash('Email verified. You can now sign in.', 'success')
         return redirect(url_for('auth.login'))
 
-    return render_template('auth/verify_otp.html', email=email, purpose=purpose)
+    return render_template('auth/verify_otp.html', email=email, purpose=purpose,
+                           otp_token=otp_token, notice=notice)
 
 
 @auth_bp.route('/resend-otp', methods=['POST'])
 def resend_otp():
-    """Resend OTP for the current verification session."""
-    payload = _otp_payload_from_session()
-    if not payload:
-        flash('No active OTP session. Please register again.', 'error')
-        return redirect(url_for('auth.register'))
+    """Resend OTP — recovers context from the otp_token in the form, not the session."""
+    old_token = request.form.get('otp_token', '')
+    email     = request.form.get('email', '')
+    purpose   = request.form.get('purpose', 'verify_email')
 
-    email = payload.get("email", "")
-    purpose = payload.get("purpose", "verify_email")
-    user_id = payload.get("user_id")
-    new_code = _store_otp(email=email, purpose=purpose, user_id=user_id)
+    # Look up the old row to get user_id
+    old_row = _otp_row_from_token(old_token)
+    user_id = old_row.user_id if old_row else None
+
+    # If we have no row and no email, we can't recover
+    if not email:
+        return redirect(url_for('auth.register') + '?notice=session_invalid')
+
+    new_code, new_token = _store_otp(email=email, purpose=purpose, user_id=user_id)
     sent = _send_email(email, "Your ICH Screening verification code", _otp_body(new_code, purpose))
     if _auth_email_debug_enabled():
         logger.info("DEV OTP resend for %s: %s", email, new_code)
 
-    if sent:
-        flash('A new OTP code was sent to your email.', 'success')
-    else:
-        flash('Failed to send OTP email. Please configure SMTP settings.', 'error')
-    return redirect(url_for('auth.verify_otp', purpose=purpose, email=email))
+    notice = 'otp_resent' if sent else 'otp_email_failed'
+    return redirect(url_for('auth.verify_otp', purpose=purpose, email=email,
+                            otp_token=new_token, notice=notice))
 
 
 @auth_bp.route('/reset-password/<token>', methods=['GET', 'POST'])

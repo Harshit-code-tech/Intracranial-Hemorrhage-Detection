@@ -28,6 +28,9 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=now_ist, nullable=False)
     updated_at = db.Column(db.DateTime, default=now_ist, onupdate=now_ist)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    # Avatar (Cloudinary)
+    avatar_url = db.Column(db.String(500), nullable=True)
+    avatar_public_id = db.Column(db.String(255), nullable=True)
     
     # Relationships
     screening_uploads = db.relationship('ScreeningUpload', backref='user', lazy=True, cascade='all, delete-orphan')
@@ -119,3 +122,27 @@ class AuditLog(db.Model):
     
     def __repr__(self):
         return f'<AuditLog {self.action} - user {self.user_id} - {self.timestamp}>'
+
+
+class PendingOtp(db.Model):
+    """Server-side OTP storage — avoids relying on session cookies (broken in cross-origin iframes)."""
+    __tablename__ = 'pending_otps'
+
+    id         = db.Column(db.Integer, primary_key=True)
+    # Opaque lookup token sent to the browser as a URL param (never the raw code)
+    token      = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    email      = db.Column(db.String(120), nullable=False, index=True)
+    purpose    = db.Column(db.String(50), nullable=False)   # verify_email | change_username | change_email
+    otp_hash   = db.Column(db.String(64), nullable=False)   # SHA-256 of the 6-digit code
+    expires_at = db.Column(db.DateTime, nullable=False)
+    attempts   = db.Column(db.Integer, default=0, nullable=False)
+    # Optional: store pending new value (e.g. new username / new email)
+    pending_value = db.Column(db.String(255), nullable=True)
+    # Optional FK — may be NULL for pre-registration flows
+    user_id    = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=True, index=True)
+
+    def is_expired(self) -> bool:
+        return now_ist() > self.expires_at
+
+    def __repr__(self):
+        return f'<PendingOtp {self.purpose} for {self.email} expires {self.expires_at}>'
