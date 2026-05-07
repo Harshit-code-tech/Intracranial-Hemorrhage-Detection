@@ -15,4 +15,4 @@ flask --app app_new init-db
 
 # Start Gunicorn in foreground
 # Hugging Face Spaces expects the app to listen on port 7860
-gunicorn -w 4 -b 0.0.0.0:${PORT:-7860} app_new:app
+gunicorn -w 4 -b 0.0.0.0:${PORT:-7860} --timeout 300 app_new:app
