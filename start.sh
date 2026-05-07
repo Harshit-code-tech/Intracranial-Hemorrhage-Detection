@@ -8,6 +8,9 @@ CELERY_PID=$!
 # Trap SIGTERM and SIGINT for graceful shutdown
 trap "kill $CELERY_PID; exit 0" SIGTERM SIGINT
 
+# Run database migrations/initialization
+flask --app app_new init-db-cmd
+
 # Start Gunicorn in foreground
 # Hugging Face Spaces expects the app to listen on port 7860
 gunicorn -w 4 -b 0.0.0.0:${PORT:-7860} app_new:app
