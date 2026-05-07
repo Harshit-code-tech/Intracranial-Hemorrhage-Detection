@@ -9,7 +9,7 @@ CELERY_PID=$!
 trap "kill $CELERY_PID; exit 0" SIGTERM SIGINT
 
 # Run database migrations/initialization
-flask --app app_new init-db-cmd
+flask --app app_new init-db
 
 # Start Gunicorn in foreground
 # Hugging Face Spaces expects the app to listen on port 7860

@@ -1157,7 +1157,7 @@ def cancel_batch(batch_id):
     if user_id != current_user.id:
         abort(404)
     try:
-        celery_app.control.revoke(batch_id, terminate=True, signal="SIGTERM")
+        celery_app.control.revoke(batch_id, terminate=True, signal="SIGKILL")
         log_audit(
             "batch_canceled",
             user_id=current_user.id,
