@@ -76,6 +76,8 @@ celery_app.conf.update(
     task_time_limit=3600,  # 1 hour hard limit
     task_soft_time_limit=3300,  # 55 min soft limit
     result_expires=86400,  # 24 hours
+    worker_prefetch_multiplier=1,  # Prevent long-running tasks from getting stuck behind each other
+    task_acks_late=True,  # Only acknowledge task after it completely finishes
 )
 
 extra_conf: dict[str, Any] = {}
