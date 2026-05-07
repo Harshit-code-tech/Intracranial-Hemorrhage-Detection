@@ -7,8 +7,18 @@
 
   <!-- ── Profile hero ── -->
   <div class="profile-hero">
-    <div class="profile-avatar" aria-label="User avatar">
-      {{ user.username[0].upper() }}
+    <div class="profile-avatar-wrapper">
+      {% if user.avatar_url %}
+        <img src="{{ user.avatar_url }}" alt="User avatar" class="profile-avatar-img">
+      {% else %}
+        <div class="profile-avatar" aria-label="User avatar">
+          {{ user.username[0].upper() }}
+        </div>
+      {% endif %}
+      <button class="avatar-upload-btn" onclick="document.getElementById('avatarUpload').click()" title="Change Avatar">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      </button>
+      <input type="file" id="avatarUpload" accept="image/*" style="display: none;">
     </div>
     <div class="profile-identity">
       <h2>{{ user.full_name or user.username }}</h2>
@@ -20,26 +30,33 @@
     </div>
   </div>
 
+  <div id="profileMessage" class="profile-message-container"></div>
+
   <!-- ── Account info ── -->
   <div class="profile-section">
     <h3>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
       Account Information
     </h3>
+    
     <div class="profile-row">
       <span class="pr-label">Username</span>
-      <span class="pr-value">{{ user.username }}</span>
+      <span class="pr-value" id="val-username">{{ user.username }}</span>
+      <button class="btn-inline-edit" onclick="openEditModal('username', '{{ user.username }}')">Edit</button>
     </div>
+
     <div class="profile-row">
       <span class="pr-label">Email</span>
-      <span class="pr-value">{{ user.email }}</span>
+      <span class="pr-value" id="val-email">{{ user.email }}</span>
+      <button class="btn-inline-edit" onclick="openEditModal('email', '{{ user.email }}')">Edit</button>
     </div>
-    {% if user.full_name %}
+    
     <div class="profile-row">
       <span class="pr-label">Full Name</span>
-      <span class="pr-value">{{ user.full_name }}</span>
+      <span class="pr-value" id="val-full_name">{{ user.full_name or '' }}</span>
+      <button class="btn-inline-edit" onclick="openEditModal('full_name', '{{ user.full_name or '' }}')">Edit</button>
     </div>
-    {% endif %}
+    
     <div class="profile-row">
       <span class="pr-label">Account Status</span>
       <span class="pr-value" style="color:#34d399;">
@@ -47,6 +64,7 @@
         Active
       </span>
     </div>
+    
     <div class="profile-row">
       <span class="pr-label">Member Since</span>
       <span class="pr-value">{{ user.created_at.strftime('%B %d, %Y') }}</span>
@@ -118,20 +136,94 @@
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
       Account Actions
     </h3>
-    <form method="POST" action="{{ url_for('auth.logout') }}">
-      <button type="submit" class="btn-logout-danger">
+    <form method="POST" action="{{ url_for('auth.logout') }}" style="display:inline-block; margin-right: 12px;">
+      <button type="submit" class="btn-logout-danger" style="background:#1e293b; border-color:#334155; color:#f8fafc;">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
         Sign Out
       </button>
     </form>
+    
+    <button class="btn-logout-danger" onclick="openDeleteModal()" style="display:inline-block;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      Delete Account
+    </button>
   </div>
 
 </div>
+
+<!-- ── Modals ── -->
+
+<!-- Edit Profile Field Modal -->
+<div class="modal-overlay" id="editModal" style="display: none;">
+  <div class="modal-content auth-card">
+    <div class="auth-card-header" style="margin-bottom:20px;">
+      <h2 id="editModalTitle">Edit Field</h2>
+    </div>
+    
+    <form id="editFieldForm" class="auth-form">
+      <input type="hidden" id="editFieldType">
+      
+      <!-- Step 1: Request Change -->
+      <div id="editStep1">
+        <div class="form-group">
+          <label id="editFieldLabel">New Value</label>
+          <div class="input-wrap">
+            <input type="text" id="editFieldValue" required>
+          </div>
+        </div>
+        <div class="pw-action-row" style="margin-top:20px;">
+          <button type="submit" class="btn-save-pw" id="btnRequestChange">Save Changes</button>
+          <button type="button" class="btn-cancel-pw" onclick="closeEditModal()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Step 2: Confirm OTP (only for email/username) -->
+      <div id="editStep2" style="display: none;">
+        <p style="color:#94a3b8;font-size:14px;margin-bottom:16px;">We've sent a verification code to confirm this change.</p>
+        <div class="form-group">
+          <label>6-Digit Code</label>
+          <div class="input-wrap">
+            <input type="text" id="editFieldOtp" maxlength="6" inputmode="numeric" placeholder="123456">
+          </div>
+        </div>
+        <input type="hidden" id="editFieldOtpToken">
+        <div class="pw-action-row" style="margin-top:20px;">
+          <button type="button" class="btn-save-pw" id="btnConfirmChange">Verify & Update</button>
+          <button type="button" class="btn-cancel-pw" onclick="closeEditModal()">Cancel</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Delete Account Modal -->
+<div class="modal-overlay" id="deleteModal" style="display: none;">
+  <div class="modal-content auth-card">
+    <div class="auth-card-header" style="margin-bottom:20px;">
+      <h2 style="color:#ef4444;">Delete Account</h2>
+      <p style="color:#fca5a5; font-size:13px; margin-top:8px;">This action is permanent and cannot be undone.</p>
+    </div>
+    <form method="POST" action="{{ url_for('auth.delete_account') }}" class="auth-form">
+      <div class="form-group">
+        <label>Enter your password to confirm</label>
+        <div class="input-wrap">
+          <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <input type="password" name="password" required>
+        </div>
+      </div>
+      <div class="pw-action-row" style="margin-top:20px;">
+        <button type="submit" class="btn-save-pw" style="background:#dc2626; border-color:#b91c1c;">Permanently Delete</button>
+        <button type="button" class="btn-cancel-pw" onclick="closeDeleteModal()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/auth-shared.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/profile.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/profile-page.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/profile-actions.js') }}" defer></script>
 {% endblock %}
-

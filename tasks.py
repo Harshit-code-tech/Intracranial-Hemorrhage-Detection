@@ -450,3 +450,26 @@ def process_dicom_batch(
 def health_check() -> str:
     """Simple health check task for monitoring."""
     return "Celery worker is healthy"
+
+@celery_app.task
+def cleanup_expired_otps():
+    """Periodic task to delete expired OTPs from the database."""
+    from app_new import app
+    from models import db, PendingOtp, now_ist
+    
+    with app.app_context():
+        try:
+            deleted = PendingOtp.query.filter(PendingOtp.expires_at < now_ist()).delete()
+            db.session.commit()
+            if deleted > 0:
+                logger.info("Cleaned up %d expired OTP rows.", deleted)
+        except Exception as exc:
+            db.session.rollback()
+            logger.error("Error cleaning up OTPs: %s", exc)
+
+celery_app.conf.beat_schedule = {
+    'cleanup-expired-otps-every-15-mins': {
+        'task': 'tasks.cleanup_expired_otps',
+        'schedule': 900.0,  # 15 minutes in seconds
+    },
+}

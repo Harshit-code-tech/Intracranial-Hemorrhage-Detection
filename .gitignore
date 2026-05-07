@@ -45,6 +45,7 @@ download_imp/*.pt
 download_imp/*.pkl
 download_imp/*.onnx
 
+push_to_hf.sh
 # download_imp/*
 # Local downloaded artifacts
 download/

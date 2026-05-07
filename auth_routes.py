@@ -524,3 +524,162 @@ def change_password():
         log_audit('password_change_error', user_id=current_user.id, 
                  status='failure', details=str(e))
         return jsonify({'error': 'Password change failed'}), 500
+
+# ── Profile Management Routes ───────────────────────────────────────────────
+
+@auth_bp.route('/profile/update-name', methods=['POST'])
+@login_required
+def update_name():
+    if not request.is_json:
+        return jsonify({'error': 'JSON required'}), 400
+    full_name = request.json.get('full_name', '').strip()
+    if not full_name:
+        return jsonify({'error': 'Name cannot be empty'}), 400
+    
+    current_user.full_name = full_name
+    db.session.commit()
+    return jsonify({'message': 'Name updated successfully', 'full_name': full_name})
+
+
+@auth_bp.route('/profile/request-username-change', methods=['POST'])
+@login_required
+def request_username_change():
+    if not request.is_json:
+        return jsonify({'error': 'JSON required'}), 400
+    new_username = request.json.get('new_username', '').strip()
+    valid, msg = validate_username(new_username)
+    if not valid:
+        return jsonify({'error': msg}), 400
+    if User.query.filter_by(username=new_username).first():
+        return jsonify({'error': 'Username already taken'}), 400
+
+    code, token = _store_otp(email=current_user.email, purpose="change_username", 
+                             user_id=current_user.id, pending_value=new_username)
+    sent = _send_email(current_user.email, "Verify username change", _otp_body(code, "change_username"))
+    if not sent:
+        return jsonify({'error': 'Failed to send OTP email'}), 500
+    return jsonify({'message': 'OTP sent to your current email', 'otp_token': token})
+
+
+@auth_bp.route('/profile/request-email-change', methods=['POST'])
+@login_required
+def request_email_change():
+    if not request.is_json:
+        return jsonify({'error': 'JSON required'}), 400
+    new_email = request.json.get('new_email', '').strip().lower()
+    valid, msg = validate_email(new_email)
+    if not valid:
+        return jsonify({'error': msg}), 400
+    if User.query.filter_by(email=new_email).first():
+        return jsonify({'error': 'Email already registered'}), 400
+
+    code, token = _store_otp(email=new_email, purpose="change_email", 
+                             user_id=current_user.id, pending_value=new_email)
+    sent = _send_email(new_email, "Verify your new email address", _otp_body(code, "change_email"))
+    if not sent:
+        return jsonify({'error': 'Failed to send OTP to new email'}), 500
+    return jsonify({'message': 'OTP sent to your NEW email address', 'otp_token': token})
+
+
+@auth_bp.route('/profile/confirm-change', methods=['POST'])
+@login_required
+def confirm_profile_change():
+    if not request.is_json:
+        return jsonify({'error': 'JSON required'}), 400
+    
+    otp = request.json.get('otp', '').strip()
+    otp_token = request.json.get('otp_token', '').strip()
+    purpose = request.json.get('purpose', '').strip()
+
+    if purpose not in ("change_username", "change_email"):
+        return jsonify({'error': 'Invalid purpose'}), 400
+
+    ok, msg, row = _validate_otp(otp, purpose, otp_token)
+    if not ok:
+        return jsonify({'error': msg}), 400
+    
+    if not row.pending_value:
+        _clear_otp_row(row)
+        return jsonify({'error': 'No pending value found in OTP session'}), 400
+
+    if purpose == "change_username":
+        if User.query.filter_by(username=row.pending_value).first():
+            _clear_otp_row(row)
+            return jsonify({'error': 'Username was taken in the meantime'}), 400
+        current_user.username = row.pending_value
+    
+    elif purpose == "change_email":
+        if User.query.filter_by(email=row.pending_value).first():
+            _clear_otp_row(row)
+            return jsonify({'error': 'Email was taken in the meantime'}), 400
+        current_user.email = row.pending_value
+
+    db.session.commit()
+    _clear_otp_row(row)
+    log_audit(purpose, user_id=current_user.id, status='success')
+    return jsonify({'message': 'Profile updated successfully'})
+
+
+@auth_bp.route('/profile/upload-avatar', methods=['POST'])
+@login_required
+def upload_avatar():
+    if 'avatar' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    file = request.files['avatar']
+    if not file.filename:
+        return jsonify({'error': 'No selected file'}), 400
+    
+    try:
+        import cloudinary
+        import cloudinary.uploader
+        res = cloudinary.uploader.upload(file, folder="ich_avatars", 
+                                         transformation=[{'width': 256, 'height': 256, 'crop': 'fill', 'gravity': 'face'}])
+        
+        # Delete old avatar if exists
+        if current_user.avatar_public_id:
+            try:
+                cloudinary.uploader.destroy(current_user.avatar_public_id)
+            except Exception as exc:
+                logger.warning("Failed to destroy old avatar: %s", exc)
+
+        current_user.avatar_url = res.get('secure_url')
+        current_user.avatar_public_id = res.get('public_id')
+        db.session.commit()
+        return jsonify({'message': 'Avatar updated', 'avatar_url': current_user.avatar_url})
+    except ImportError:
+        return jsonify({'error': 'Cloudinary package not installed'}), 500
+    except Exception as exc:
+        logger.error("Avatar upload failed: %s", exc)
+        return jsonify({'error': 'Failed to upload image'}), 500
+
+
+@auth_bp.route('/delete-account', methods=['POST'])
+@login_required
+def delete_account():
+    password = request.form.get('password', '')
+    if not current_user.check_password(password):
+        flash('Incorrect password. Account deletion cancelled.', 'error')
+        return redirect(url_for('auth.profile'))
+    
+    try:
+        user_id = current_user.id
+        
+        # Cloudinary cleanup: delete avatar if exists
+        if current_user.avatar_public_id:
+            try:
+                import cloudinary.uploader
+                cloudinary.uploader.destroy(current_user.avatar_public_id)
+            except Exception as exc:
+                logger.warning("Failed to delete avatar during account deletion: %s", exc)
+
+        db.session.delete(current_user)
+        db.session.commit()
+        log_audit('account_deleted', user_id=user_id, status='success')
+        logout_user()
+        flash('Your account has been successfully deleted.', 'success')
+        return redirect(url_for('home'))
+    except Exception as exc:
+        db.session.rollback()
+        logger.error("Error deleting account: %s", exc)
+        flash('An error occurred while deleting your account.', 'error')
+        return redirect(url_for('auth.profile'))

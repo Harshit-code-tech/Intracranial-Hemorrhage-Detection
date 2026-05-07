@@ -2,7 +2,7 @@
 
 # Start Celery worker in background
 # We use concurrency=2 to avoid memory overload on the 16GB free tier
-celery -A tasks worker --loglevel=info --concurrency=2 &
+celery -A tasks worker --loglevel=info --concurrency=2 -B &
 CELERY_PID=$!
 
 # Trap SIGTERM and SIGINT for graceful shutdown

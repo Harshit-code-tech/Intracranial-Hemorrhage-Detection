@@ -377,3 +377,102 @@
   .auth-form-panel { padding:32px 18px; }
   .auth-card-header h2 { font-size:1.45rem; }
 }
+
+/* ── Profile Modals & Inline Edit ── */
+
+.profile-avatar-wrapper {
+  position: relative;
+  display: inline-block;
+  margin-right: 20px;
+}
+.profile-avatar-img {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #334155;
+  background: #0f172a;
+}
+.avatar-upload-btn {
+  position: absolute;
+  bottom: 0;
+  right: -4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 2px solid #1e293b;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.avatar-upload-btn:hover {
+  background: #2563eb;
+  transform: scale(1.1);
+}
+
+.btn-inline-edit {
+  background: transparent;
+  border: 1px solid #334155;
+  color: #94a3b8;
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-left: auto;
+}
+.btn-inline-edit:hover {
+  background: #1e293b;
+  color: #f8fafc;
+  border-color: #475569;
+}
+
+.profile-row {
+  display: flex;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #1e293b;
+}
+.profile-row:last-child {
+  border-bottom: none;
+}
+.pr-label {
+  width: 140px;
+  color: #64748b;
+  font-size: 14px;
+}
+.pr-value {
+  color: #f8fafc;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(2, 6, 23, 0.8);
+  backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal-content {
+  width: 100%;
+  max-width: 400px;
+  animation: modal-pop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes modal-pop {
+  0% { transform: scale(0.95) translateY(10px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.profile-message-container {
+  margin-bottom: 24px;
+}
