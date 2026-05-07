@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ICH Detection Pipeline — AI-Powered CT Brain Scan Analysis</title>
+  <meta name="description"
+    content="Clinical-grade intracranial hemorrhage detection using deep learning. Upload DICOM CT scans and get instant AI-powered screening with Grad-CAM heatmaps and triage reports." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/landing.css') }}" />
+</head>
+
+<body>
+
+  <!-- ── Topbar ────────────────────────────────────────────────── -->
+  <header class="topbar">
+    <a class="brand" href="#">
+      <div class="brand-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+        </svg>
+      </div>
+      <span class="brand-name">ICH <span>Pipeline</span></span>
+    </a>
+    <nav class="nav-actions">
+      <a href="{{ url_for('auth.login') }}" class="btn-ghost">Sign In</a>
+      <a href="{{ url_for('auth.register') }}" class="btn-primary">
+        Get Started
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="5" y1="12" x2="19" y2="12" />
+          <polyline points="12 5 19 12 12 19" />
+        </svg>
+      </a>
+    </nav>
+  </header>
+
+  <!-- ── Hero ──────────────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="hero-badge">
+        <div class="badge-dot"></div>
+        AI-Powered Medical Screening
+      </div>
+
+      <h1>
+        Detect Brain Hemorrhage<br>
+        <span class="grad">In Seconds, Not Hours</span>
+      </h1>
+
+      <p class="hero-sub">
+        Upload a DICOM CT brain scan and get an AI-powered hemorrhage probability score,
+        Grad-CAM heatmap visualization, and automated clinical triage report — instantly.
+      </p>
+
+      <div class="hero-ctas">
+        <a href="{{ url_for('auth.register') }}" class="btn-hero btn-hero-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+          Start Screening Free
+        </a>
+        <a href="{{ url_for('auth.login') }}" class="btn-hero btn-hero-secondary">
+          Sign In to Dashboard
+        </a>
+      </div>
+
+      <div class="trust-bar">
+        <span class="trust-item">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          EfficientNet-B4 Model
+        </span>
+        <span class="trust-item">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          Grad-CAM Heatmaps
+        </span>
+        <span class="trust-item">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          Calibrated Confidence Scores
+        </span>
+        <span class="trust-item">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+          Automated Triage
+        </span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Stats ─────────────────────────────────────────────────── -->
+  <div class="stats-strip">
+    <div class="stats-inner">
+      <div class="stat-item">
+        <div class="stat-num">~90%</div>
+        <div class="stat-desc">Sensitivity on ICH-positive slices</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">&lt; 30s</div>
+        <div class="stat-desc">Time to first result per scan</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-num">DICOM</div>
+        <div class="stat-desc">Native .dcm &amp; .zip batch support</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Features ──────────────────────────────────────────────── -->
+  <section class="features">
+    <div class="section-label">Core Capabilities</div>
+    <h2 class="section-title">Everything a radiologist needs — fast</h2>
+    <p class="section-sub">From raw DICOM upload to clinical-grade report in under a minute.</p>
+
+    <div class="features-grid">
+
+      <div class="feat-card">
+        <div class="feat-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+        </div>
+        <h3>Batch DICOM Processing</h3>
+        <p>Upload a .dcm file or a .zip archive of hundreds of slices. The pipeline handles CT windowing, preprocessing,
+          and inference on every slice automatically.</p>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-icon" style="background:rgba(52,211,153,0.1);border-color:rgba(52,211,153,0.2);color:#34d399;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 8v4l3 3" />
+          </svg>
+        </div>
+        <h3>Calibrated AI Confidence</h3>
+        <p>Our EfficientNet-B4 model outputs probability scores calibrated with temperature scaling, so a 90% score
+          actually means 90%.</p>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-icon"
+          style="background:rgba(251,113,133,0.1);border-color:rgba(251,113,133,0.2);color:#fb7185;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </div>
+        <h3>Grad-CAM Heatmaps</h3>
+        <p>Gradient-weighted class activation maps overlay on every scan, highlighting the exact regions that drove the
+          model's hemorrhage prediction.</p>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-icon"
+          style="background:rgba(129,140,248,0.1);border-color:rgba(129,140,248,0.2);color:#818cf8;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+          </svg>
+        </div>
+        <h3>LLM Clinical Summary</h3>
+        <p>Each scan triggers a Groq-powered LLM that generates a human-readable clinical narrative with triage action
+          and urgency classification.</p>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-icon" style="background:rgba(251,191,36,0.1);border-color:rgba(251,191,36,0.2);color:#fbbf24;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <line x1="18" y1="20" x2="18" y2="10" />
+            <line x1="12" y1="20" x2="12" y2="4" />
+            <line x1="6" y1="20" x2="6" y2="14" />
+          </svg>
+        </div>
+        <h3>Model Evaluation Metrics</h3>
+        <p>Built-in evaluation dashboard with ROC curves, calibration plots, and confidence band analysis to track model
+          performance over time.</p>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-icon" style="background:rgba(52,211,153,0.1);border-color:rgba(52,211,153,0.2);color:#34d399;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
+        </div>
+        <h3>Secure &amp; Isolated</h3>
+        <p>Every user gets their own isolated data directory. All uploads are user-scoped and access-controlled with
+          rate limiting and audit logs.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ── How it works ───────────────────────────────────────────── -->
+  <section class="how">
+    <div class="section-label">Workflow</div>
+    <h2 class="section-title">Four steps to a clinical report</h2>
+    <p class="section-sub" style="margin-bottom:48px;">The entire pipeline runs in the background — you just upload and
+      wait.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <h4>Upload DICOM</h4>
+        <p>Upload a .dcm slice or a .zip batch. Single exams or full series are both supported.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <h4>AI Inference</h4>
+        <p>EfficientNet-B4 scores each slice for ICH probability with calibrated confidence.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h4>Grad-CAM</h4>
+        <p>Gradient-weighted heatmaps highlight regions driving the hemorrhage prediction.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <h4>Clinical Report</h4>
+        <p>Auto-generated PDF report with findings, confidence bands, and triage action.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── CTA ───────────────────────────────────────────────────── -->
+  <section class="cta-section">
+    <h2>Ready to try it?</h2>
+    <p>Create a free account and upload your first scan in under a minute.</p>
+
+    <div class="disclaimer">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+        <line x1="12" y1="9" x2="12" y2="13" />
+        <line x1="12" y1="17" x2="12.01" y2="17" />
+      </svg>
+      <span>
+        <strong>Medical Disclaimer:</strong> This is an AI-assisted screening tool and does <strong>not</strong>
+        constitute a medical diagnosis. All findings must be reviewed by a qualified medical professional
+        before any clinical action is taken.
+      </span>
+    </div>
+
+    <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap;">
+      <a href="{{ url_for('auth.register') }}" class="btn-hero btn-hero-primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="8.5" cy="7" r="4" />
+          <line x1="20" y1="8" x2="20" y2="14" />
+          <line x1="23" y1="11" x2="17" y2="11" />
+        </svg>
+        Create Free Account
+      </a>
+      <a href="{{ url_for('auth.login') }}" class="btn-hero btn-hero-secondary">Sign In</a>
+    </div>
+  </section>
+
+  <!-- ── Footer ────────────────────────────────────────────────── -->
+  <footer>
+    <p>ICH Detection Pipeline &mdash; AI screening tool, not a diagnostic device.</p>
+    <p style="margin-top:6px;font-size:0.78rem;opacity:0.6;">All findings must be reviewed by a qualified medical
+      professional.</p>
+  </footer>
+
+  <script src="{{ url_for('static', filename='js/landing.js') }}" defer></script>
+</body>
+
+</html>

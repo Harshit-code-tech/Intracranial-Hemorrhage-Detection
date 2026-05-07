@@ -88,6 +88,50 @@
     }
   }
 
+  // ── File size guard ──────────────────────────────────────────────────────
+  var MAX_MB = 50;
+
+  function removeSizeWarning() {
+    var w = document.getElementById('uploadSizeWarning');
+    if (w) w.remove();
+  }
+
+  function showSizeWarning(sizeMB) {
+    removeSizeWarning();
+    var el = document.createElement('div');
+    el.id = 'uploadSizeWarning';
+    el.style.cssText = 'margin-top:14px;padding:14px 18px;border-radius:12px;background:rgba(251,191,36,0.08);border:1px solid rgba(251,191,36,0.35);color:#fde68a;font-size:0.88rem;line-height:1.6;display:flex;align-items:flex-start;gap:12px;';
+    el.innerHTML =
+      '<span style="font-size:1.5rem;flex-shrink:0;line-height:1.2">😅</span>' +
+      '<div><strong>File too large (' + sizeMB.toFixed(1) + ' MB)</strong><br>' +
+      'Because of free-tier limitations, we can\'t go further than <strong>' + MAX_MB + ' MB</strong> per upload. ' +
+      'Please split your scan into smaller batches and try again.</div>';
+    var active = document.querySelector('.tab-panel.active');
+    if (active && active.parentNode) {
+      active.parentNode.insertBefore(el, active.nextSibling);
+    }
+  }
+
+  function attachSizeCheck(inputId, submitId, formId, overlayId) {
+    var inp = document.getElementById(inputId);
+    var sub = document.getElementById(submitId);
+    var frm = document.getElementById(formId);
+    var ov = document.getElementById(overlayId);
+    if (!inp || !frm) return;
+    frm.addEventListener('submit', function (e) {
+      var totalMB = 0;
+      for (var i = 0; i < inp.files.length; i++) { totalMB += inp.files[i].size / (1024 * 1024); }
+      if (totalMB > MAX_MB) {
+        e.preventDefault();
+        if (sub) sub.disabled = false;
+        if (ov) ov.style.display = 'none';
+        showSizeWarning(totalMB);
+      } else {
+        removeSizeWarning();
+      }
+    });
+  }
+
   function initUploadPage() {
     var tabs = document.querySelectorAll('.upload-tab');
     var panels = document.querySelectorAll('.tab-panel');
@@ -98,53 +142,36 @@
 
     tabs.forEach(function (tab) {
       tab.addEventListener('click', function () {
-        tabs.forEach(function (item) {
-          item.classList.remove('active');
-        });
-        panels.forEach(function (panel) {
-          panel.classList.remove('active');
-        });
-
+        tabs.forEach(function (item) { item.classList.remove('active'); });
+        panels.forEach(function (panel) { panel.classList.remove('active'); });
         tab.classList.add('active');
         var target = document.getElementById('tab-' + tab.dataset.tab);
-        if (target) {
-          target.classList.add('active');
-        }
+        if (target) target.classList.add('active');
+        removeSizeWarning();
       });
     });
 
     wireDropzone({
-      zoneId: 'dropzoneSingle',
-      inputId: 'singleInput',
-      infoId: 'singleInfo',
-      labelId: 'singleFileName',
-      clearSel: '.js-clear-single',
-      submitId: 'singleSubmit',
-      formId: 'singleForm',
-      overlayId: 'singleOverlay',
+      zoneId: 'dropzoneSingle', inputId: 'singleInput', infoId: 'singleInfo',
+      labelId: 'singleFileName', clearSel: '.js-clear-single',
+      submitId: 'singleSubmit', formId: 'singleForm', overlayId: 'singleOverlay',
       multi: false
     });
 
     wireDropzone({
-      zoneId: 'dropzoneMulti',
-      inputId: 'multiInput',
-      infoId: 'multiInfo',
-      labelId: 'multiFileName',
-      clearSel: '.js-clear-multi',
-      submitId: 'multiSubmit',
-      formId: 'multiForm',
-      overlayId: 'multiOverlay',
+      zoneId: 'dropzoneMulti', inputId: 'multiInput', infoId: 'multiInfo',
+      labelId: 'multiFileName', clearSel: '.js-clear-multi',
+      submitId: 'multiSubmit', formId: 'multiForm', overlayId: 'multiOverlay',
       multi: true
     });
 
+    attachSizeCheck('singleInput', 'singleSubmit', 'singleForm', 'singleOverlay');
+    attachSizeCheck('multiInput', 'multiSubmit', 'multiForm', 'multiOverlay');
+
     var dirInput = document.getElementById('dirPath');
     var dirSubmit = document.getElementById('dirSubmit');
-
     if (dirInput && dirSubmit) {
-      function checkDir() {
-        dirSubmit.disabled = !dirInput.value.trim();
-      }
-
+      function checkDir() { dirSubmit.disabled = !dirInput.value.trim(); }
       dirInput.addEventListener('input', checkDir);
       checkDir();
     }

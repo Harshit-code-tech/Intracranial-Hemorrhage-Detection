@@ -958,9 +958,9 @@ def _log_response(response):  # pyright: ignore[reportUnusedFunction]
 
 @app.route("/")
 def home():
-    """Home page"""
+    """Home page — shows landing page for guests, dashboard for logged-in users."""
     if not current_user.is_authenticated:
-        return redirect(url_for("auth.login"))
+        return render_template("landing.html")
     
     cases = _load_user_cases(current_user.id)
     stats = compute_stats(cases)

@@ -30,10 +30,10 @@
 
 <!-- ── Tab navigation ──────────────────────────────────────────────── -->
 <div class="upload-tabs" role="tablist">
-  <button class="upload-tab active" data-tab="single"  role="tab">Single File</button>
-  <button class="upload-tab"        data-tab="multi"   role="tab">Multi-File / ZIP</button>
+  <button class="upload-tab active" data-tab="single" role="tab">Single File</button>
+  <button class="upload-tab" data-tab="multi" role="tab">Multi-File / ZIP</button>
   {% if local_mode %}
-  <button class="upload-tab"        data-tab="dirscan" role="tab">Scan Directory</button>
+  <button class="upload-tab" data-tab="dirscan" role="tab">Scan Directory</button>
   {% endif %}
 </div>
 
@@ -41,13 +41,11 @@
 <!--  TAB 1 — Single .dcm file                                         -->
 <!-- ════════════════════════════════════════════════════════════════════ -->
 <section class="panel upload-panel tab-panel active" id="tab-single">
-  <form method="post" action="{{ url_for('analyze') }}"
-        enctype="multipart/form-data" id="singleForm">
+  <form method="post" action="{{ url_for('analyze') }}" enctype="multipart/form-data" id="singleForm">
 
     <div class="dropzone" id="dropzoneSingle">
-      <svg width="56" height="56" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="1.5"
-           stroke-linecap="round" stroke-linejoin="round">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+        stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
         <polyline points="17 8 12 3 7 8" />
         <line x1="12" y1="3" x2="12" y2="15" />
@@ -58,8 +56,7 @@
     </div>
 
     <div class="file-info" id="singleInfo" style="display: none">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
         <polyline points="14 2 14 8 20 8" />
       </svg>
@@ -68,8 +65,7 @@
     </div>
 
     <button type="submit" class="btn btn-primary" id="singleSubmit" disabled>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
       </svg>
       Analyze Scan
@@ -87,25 +83,21 @@
 <!--  TAB 2 — Multi-file / ZIP upload                                   -->
 <!-- ════════════════════════════════════════════════════════════════════ -->
 <section class="panel upload-panel tab-panel" id="tab-multi">
-  <form method="post" action="{{ url_for('analyze') }}"
-        enctype="multipart/form-data" id="multiForm">
+  <form method="post" action="{{ url_for('analyze') }}" enctype="multipart/form-data" id="multiForm">
 
     <div class="dropzone" id="dropzoneMulti">
-      <svg width="56" height="56" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="1.5"
-           stroke-linecap="round" stroke-linejoin="round">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+        stroke-linecap="round" stroke-linejoin="round">
         <rect x="2" y="7" width="20" height="14" rx="2" />
         <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
       </svg>
       <p class="dropzone-text">Drag &amp; drop .dcm files or a .zip archive</p>
       <p class="muted small">Select multiple files, or a single .zip containing DICOM slices</p>
-      <input type="file" name="file" id="multiInput"
-             accept=".dcm,.zip" multiple hidden />
+      <input type="file" name="file" id="multiInput" accept=".dcm,.zip" multiple hidden />
     </div>
 
     <div class="file-info" id="multiInfo" style="display: none">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="2" y="7" width="20" height="14" rx="2" />
         <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
       </svg>
@@ -114,8 +106,7 @@
     </div>
 
     <button type="submit" class="btn btn-primary" id="multiSubmit" disabled>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
       </svg>
       Analyze Batch
@@ -139,12 +130,10 @@
       Server-side directory containing .dcm files
     </label>
     <div class="dir-input-row">
-      <input type="text" name="dir_path" id="dirPath" class="input"
-             placeholder="D:\scans\patient_001"
-             spellcheck="false" autocomplete="off" />
+      <input type="text" name="dir_path" id="dirPath" class="input" placeholder="D:\scans\patient_001"
+        spellcheck="false" autocomplete="off" />
       <button type="submit" class="btn btn-primary" id="dirSubmit">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="11" cy="11" r="8" />
           <line x1="21" y1="21" x2="16.65" y2="16.65" />
         </svg>
@@ -182,7 +171,7 @@
       <div class="step-num">3</div>
       <div class="step-text">
         <strong>Analyze</strong>
-        <p class="muted small">EfficientNet-B0 model with calibrated scoring</p>
+        <p class="muted small">EfficientNet-B4 model with calibrated scoring</p>
       </div>
     </div>
     <div class="step">
