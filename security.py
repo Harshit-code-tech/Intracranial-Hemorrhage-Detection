@@ -27,7 +27,8 @@ def init_security(app):
         """Add security headers to all responses"""
         
         # Prevent clickjacking attacks
-        response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+        # X-Frame-Options is removed because it prevents Hugging Face from embedding the app.
+        # We rely on CSP frame-ancestors instead.
         
         # Prevent MIME type sniffing
         response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -43,7 +44,7 @@ def init_security(app):
             "font-src 'self' https://fonts.gstatic.com; "
             "img-src 'self' data: https://res.cloudinary.com; "
             "connect-src 'self'; "
-            "frame-ancestors 'self'; "
+            "frame-ancestors 'self' https://huggingface.co https://*.hf.space; "
             "base-uri 'self'; "
             "form-action 'self'"
         )
