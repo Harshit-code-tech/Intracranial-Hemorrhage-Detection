@@ -189,6 +189,29 @@
 .input-wrap:focus-within .input-icon { color:#6ea8fe; }
 .input-wrap input.has-toggle { padding-right:40px; }
 
+/* OTP Inputs */
+.otp-digit {
+  width: 100%;
+  aspect-ratio: 1; /* Make it square */
+  text-align: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  background: rgba(11, 18, 36, 0.8);
+  color: #e8ecf6;
+  border: 1px solid #243356;
+  border-radius: 12px;
+  transition: all 0.2s;
+  -webkit-appearance: none;
+}
+.otp-digit:focus {
+  outline: none;
+  border-color: #6ea8fe;
+  background: rgba(15, 24, 50, 0.9);
+  box-shadow: 0 0 0 3px rgba(110, 168, 254, 0.15);
+  transform: translateY(-2px);
+}
+.otp-digit:disabled { opacity: 0.6; cursor: not-allowed; }
+
 .btn-pw-toggle {
   position:absolute; right:11px; top:50%; transform:translateY(-50%);
   background:transparent; border:none; color:#3d5482;
