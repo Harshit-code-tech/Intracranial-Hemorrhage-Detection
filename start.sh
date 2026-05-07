@@ -1,5 +1,7 @@
 #!/bin/bash
-
+# Limit PyTorch background threads so Gunicorn isn't starved
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
 # Start Celery worker in background
 # We use concurrency=2 to avoid memory overload on the 16GB free tier
 celery -A tasks worker --loglevel=info --concurrency=2 -O fair -B &
