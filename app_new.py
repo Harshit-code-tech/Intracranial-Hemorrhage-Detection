@@ -188,9 +188,9 @@ app.config.update(
         "pool_recycle": 280,
     },
     SQLALCHEMY_TRACK_MODIFICATIONS=False,
-    SESSION_COOKIE_SECURE=not APP_DEBUG,
+    SESSION_COOKIE_SECURE=True,
     SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SAMESITE="None",
     PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=30),
 )
 
