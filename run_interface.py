@@ -151,6 +151,11 @@ def infer_batch(
     else:
         logits, cam = grad_cam.generate(t9, class_idx=0)
 
+    if len(images_rgb) == 1:
+        logits = np.atleast_2d(logits)
+        if cam.ndim == 2:
+            cam = np.expand_dims(cam, axis=0)
+
     raw_probs = core.sigmoid_np(logits)
     cal_probs = core.sigmoid_np(logits / max(float(temperature), 1e-6))
 
@@ -160,8 +165,8 @@ def infer_batch(
             "raw_logits": logits[idx],
             "raw_probs": raw_probs[idx],
             "cal_probs": cal_probs[idx],
-            "raw_prob_any": float(raw_probs[idx][0]),
-            "cal_prob_any": float(cal_probs[idx][0]),
+            "raw_prob_any": float(np.atleast_1d(raw_probs[idx])[0]),
+            "cal_prob_any": float(np.atleast_1d(cal_probs[idx])[0]),
             "cam": cam[idx],
         })
     return results
