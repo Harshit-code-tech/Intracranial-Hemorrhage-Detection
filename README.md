@@ -1,11 +1,4 @@
----
-title: ICH Detection Pipeline
-emoji: 🏥
-colorFrom: blue
-colorTo: pink
-sdk: docker
-pinned: false
----
+
 # AI Medical Intelligence Pipeline for CT Scan Analysis
 
 AI medical intelligence pipeline for intracranial hemorrhage (ICH) analysis from head CT (DICOM) images.
@@ -39,11 +32,7 @@ Detailed performance and B4-specific analysis are documented separately in:
 
 - [B4_Performance_Report.md](B4_Performance_Report.md)
 
-## GitHub Pages Setup
 
-For step-by-step GitHub Pages setup (project site and username.github.io site), see:
-
-- [GITHUB_PAGES_DOCUMENT.md](GITHUB_PAGES_DOCUMENT.md)
 
 ## Repository Structure
 
